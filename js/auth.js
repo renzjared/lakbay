@@ -23,8 +23,25 @@ export async function initAuth() {
     await supabase.auth.signInWithOAuth({ provider: 'discord', options: { redirectTo: window.location.origin } });
   };
   
-  DOM.loginBtn.onclick = login;
-  DOM.mobileLoginBtn.onclick = login;
+    DOM.loginBtn.onclick = async () => {
+    // Captures "https://renzjared.github.io/lakbay/" instead of just the root domain
+    const redirectUrl = window.location.origin + window.location.pathname;
+
+    await supabase.auth.signInWithOAuth({
+        provider: 'discord',
+        options: { redirectTo: redirectUrl }
+    });
+    };
+
+    DOM.mobileLoginBtn.onclick = async () => {
+    // Captures "https://renzjared.github.io/lakbay/" instead of just the root domain
+    const redirectUrl = window.location.origin + window.location.pathname;
+
+    await supabase.auth.signInWithOAuth({
+        provider: 'discord',
+        options: { redirectTo: redirectUrl }
+    });
+    };
 
   DOM.logoutBtn.onclick = async () => {
     await supabase.auth.signOut();
