@@ -69,17 +69,43 @@ export async function updateTrip(updatedTrip) {
 }
 
 export async function createTrip(emoji, destination) {
-  const newTrip = { emoji: emoji || '📍', destination, days: [], notes: [] };
-
   if (useSupabase) {
+    // 1. Get the currently logged-in user
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      alert("You must be logged in to create a trip.");
+      return null;
+    }
+
+    // 2. Explicitly attach the owner_id and default visibility
+    const newTrip = { 
+      emoji: emoji || '📍', 
+      destination, 
+      days: [], 
+      notes: [],
+      owner_id: user.id,          // <--- This fixes the RLS blocking issue
+      visibility: 'private'       // <--- Sets default sharing status
+    };
+
     const { data, error } = await supabase.from('trips').insert([newTrip]).select();
-    if (error) console.error("Insert Error:", error);
+    
+    // 3. Surface the error to the screen if it fails!
+    if (error) {
+      console.error("Insert Error:", error);
+      alert("Failed to save trip: " + error.message); 
+      return null;
+    }
+    
     return data ? data[0] : null;
+    
   } else {
+    // LocalStorage fallback (unchanged)
+    const newTrip = { emoji: emoji || '📍', destination, days: [], notes: [] };
     const trips = await getTrips();
     newTrip.id = 'trip-' + Date.now().toString();
     trips.push(newTrip);
-    localStorage.setItem(DB_KEY, JSON.stringify(trips));
+    localStorage.setItem('travel_app_trips', JSON.stringify(trips));
     return newTrip;
   }
 }
