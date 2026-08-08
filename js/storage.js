@@ -9,9 +9,6 @@ export let supabase = null;
 
 if (useSupabase) {
   supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
-  console.log("☁️ Connected to Supabase");
-} else {
-  console.log("💾 Running in LocalStorage mode");
 }
 
 const DB_KEY = 'travel_app_trips';
@@ -27,48 +24,18 @@ export async function getTrips() {
   if (useSupabase) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return []; 
-
-    // Fetch my profile to get my username to check for pending invites
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('username')
-      .eq('id', user.id)
-      .single();
+    const { data: profile } = await supabase.from('profiles').select('username').eq('id', user.id).single();
     
-    // 1. Fetch trips where you are the owner
-    const { data: ownedTrips, error: error1 } = await supabase
-      .from('trips')
-      .select('*')
-      .eq('owner_id', user.id);
-      
-    if (error1) console.error("Error fetching owned trips:", error1);
-
-    // 2. Fetch trips where you are a collaborator (member OR pending username)
+    const { data: ownedTrips } = await supabase.from('trips').select('*').eq('owner_id', user.id);
     let memberQuery = `user_id.eq.${user.id}`;
-    if (profile && profile.username) {
-      memberQuery += `,pending_username.ilike.${profile.username}`;
-    }
+    if (profile && profile.username) memberQuery += `,pending_username.ilike.${profile.username}`;
 
-    const { data: sharedData, error: error2 } = await supabase
-      .from('trip_members')
-      .select('trips(*)')
-      .or(memberQuery);
+    const { data: sharedData } = await supabase.from('trip_members').select('trips(*)').or(memberQuery);
+    const sharedTrips = (sharedData || []).map(row => row.trips).filter(trip => trip !== null);
 
-    if (error2) console.error("Error fetching shared trips:", error2);
-
-    // Extract the nested trip objects from the shared data
-    const sharedTrips = (sharedData || [])
-      .map(row => row.trips)
-      .filter(trip => trip !== null);
-
-    // 3. Combine, remove any duplicates, and sort by date created
     const allTrips = [...(ownedTrips || []), ...sharedTrips];
-    const uniqueTrips = Array.from(new Map(allTrips.map(item => [item.id, item])).values());
-    
-    return uniqueTrips.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-    
+    return Array.from(new Map(allTrips.map(item => [item.id, item])).values()).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   } else {
-    // LocalStorage fallback
     const data = localStorage.getItem(DB_KEY);
     return data ? JSON.parse(data) : [];
   }
@@ -76,16 +43,9 @@ export async function getTrips() {
 
 export async function getTrip(id) {
   if (useSupabase) {
-    // RLS ensures logged-out users can ONLY fetch this if visibility is public_view or public_edit
-    const { data, error } = await supabase.from('trips').select('*').eq('id', id).single();
-    if (error) {
-      console.error("Error fetching single trip:", error);
-      return null;
-    }
+    const { data } = await supabase.from('trips').select('*').eq('id', id).single();
     return data;
   }
-  
-  // Local fallback
   const trips = await getTrips();
   return trips.find(t => t.id === id);
 }
@@ -97,13 +57,13 @@ export async function updateTrip(updatedTrip) {
       destination: updatedTrip.destination,
       days: updatedTrip.days,
       notes: updatedTrip.notes,
+      expenses: updatedTrip.expenses, // Ensure expenses are saved
       visibility: updatedTrip.visibility
     }).eq('id', updatedTrip.id);
     
     if (error) {
-      console.error("Update Error:", error);
       alert("Action denied: You don't have permission to edit this.");
-      window.location.reload(); // Force refresh to wipe unauthorized visual edits
+      window.location.reload(); 
       return false;
     }
     return true;
@@ -120,50 +80,27 @@ export async function updateTrip(updatedTrip) {
 
 export async function createTrip(emoji, destination) {
   if (useSupabase) {
-    // 1. Get the currently logged-in user
     const { data: { user } } = await supabase.auth.getUser();
-    
-    if (!user) {
-      alert("You must be logged in to create a trip.");
-      return null;
-    }
-
-    // 2. Explicitly attach the owner_id and default visibility
+    if (!user) return null;
     const newTrip = { 
-      emoji: emoji || '📍', 
-      destination, 
-      days: [], 
-      notes: [],
-      owner_id: user.id,          // <--- This fixes the RLS blocking issue
-      visibility: 'private'       // <--- Sets default sharing status
+      emoji: emoji || '📍', destination, days: [], notes: [], expenses: [],
+      owner_id: user.id, visibility: 'private'
     };
-
-    const { data, error } = await supabase.from('trips').insert([newTrip]).select();
-    
-    // 3. Surface the error to the screen if it fails!
-    if (error) {
-      console.error("Insert Error:", error);
-      alert("Failed to save trip: " + error.message); 
-      return null;
-    }
-    
+    const { data } = await supabase.from('trips').insert([newTrip]).select();
     return data ? data[0] : null;
-    
   } else {
-    // LocalStorage fallback (unchanged)
-    const newTrip = { emoji: emoji || '📍', destination, days: [], notes: [] };
+    const newTrip = { emoji: emoji || '📍', destination, days: [], notes: [], expenses: [] };
     const trips = await getTrips();
     newTrip.id = 'trip-' + Date.now().toString();
     trips.push(newTrip);
-    localStorage.setItem('travel_app_trips', JSON.stringify(trips));
+    localStorage.setItem(DB_KEY, JSON.stringify(trips));
     return newTrip;
   }
 }
 
 export async function deleteTrip(id) {
   if (useSupabase) {
-    const { error } = await supabase.from('trips').delete().eq('id', id);
-    if (error) console.error("Delete Error:", error);
+    await supabase.from('trips').delete().eq('id', id);
   } else {
     const trips = await getTrips();
     localStorage.setItem(DB_KEY, JSON.stringify(trips.filter(trip => trip.id !== id)));

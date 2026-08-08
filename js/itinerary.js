@@ -12,39 +12,20 @@ let editingActivityId = null;
 const TRANSIT_ICONS = { car: '🚗', bus: '🚌', train: '🚆', plane: '✈️', bike: '🚲', walk: '🚶' };
 
 const DOM = {
-  // Days View
-  daysList: document.getElementById('days-list'),
-  daysTripTitle: document.getElementById('days-trip-title'),
-  addDayBtn: document.getElementById('add-day-btn'),
-  dayModalBg: document.getElementById('day-backdrop'),
-  dayModal: document.getElementById('day-modal'),
-  dayDateInp: document.getElementById('day-date-input'),
-  dayTitleInp: document.getElementById('day-title-input'),
-  saveDayBtn: document.getElementById('save-day-btn'),
-  closeDayBtn: document.getElementById('close-day-btn'),
-  
-  // Day Editor View
-  itineraryContainer: document.getElementById('itinerary-container'),
-  dayTitle: document.getElementById('day-title'),
-  
-  // Activity Modal
-  bg: document.getElementById('activity-backdrop'),
-  modal: document.getElementById('activity-modal'),
-  titleEl: document.getElementById('activity-modal-title'),
-  typeVal: document.getElementById('act-type-val'),
-  btnDest: document.getElementById('type-dest-btn'),
-  btnTransit: document.getElementById('type-transit-btn'),
-  transitModesCont: document.getElementById('transit-modes'),
-  transitModeBtns: document.querySelectorAll('.transit-mode-btn'),
-  transitVal: document.getElementById('act-transit-val'),
-  titleInp: document.getElementById('act-title'),
-  startInp: document.getElementById('act-start'),
-  durInp: document.getElementById('act-duration'),
-  costCont: document.getElementById('cost-container'),
-  costInp: document.getElementById('act-cost'),
-  btnSave: document.getElementById('save-act-btn'),
-  btnDelete: document.getElementById('delete-act-btn'),
-  btnClose: document.getElementById('close-act-btn'),
+  daysList: document.getElementById('days-list'), daysTripTitle: document.getElementById('days-trip-title'),
+  addDayBtn: document.getElementById('add-day-btn'), dayModalBg: document.getElementById('day-backdrop'),
+  dayModal: document.getElementById('day-modal'), dayDateInp: document.getElementById('day-date-input'),
+  dayTitleInp: document.getElementById('day-title-input'), saveDayBtn: document.getElementById('save-day-btn'),
+  closeDayBtn: document.getElementById('close-day-btn'), itineraryContainer: document.getElementById('itinerary-container'),
+  dayTitle: document.getElementById('day-title'), bg: document.getElementById('activity-backdrop'),
+  modal: document.getElementById('activity-modal'), titleEl: document.getElementById('activity-modal-title'),
+  typeVal: document.getElementById('act-type-val'), btnDest: document.getElementById('type-dest-btn'),
+  btnTransit: document.getElementById('type-transit-btn'), transitModesCont: document.getElementById('transit-modes'),
+  transitModeBtns: document.querySelectorAll('.transit-mode-btn'), transitVal: document.getElementById('act-transit-val'),
+  titleInp: document.getElementById('act-title'), startInp: document.getElementById('act-start'),
+  durInp: document.getElementById('act-duration'), costCont: document.getElementById('cost-container'),
+  costInp: document.getElementById('act-cost'), btnSave: document.getElementById('save-act-btn'),
+  btnDelete: document.getElementById('delete-act-btn'), btnClose: document.getElementById('close-act-btn'),
   addActBtn: document.getElementById('add-activity-btn')
 };
 
@@ -53,26 +34,19 @@ export async function loadTripDays(trip) {
   if (!activeTrip.days) activeTrip.days = []; 
   DOM.daysTripTitle.textContent = `${trip.emoji || '📍'} ${trip.destination}`;
   
-  // 1. SECURE ROLE CALCULATION
   activeUserRole = 'viewer'; 
-  
   if (!useSupabase) {
-    // If running in local storage mode without a DB, the user owns everything
     activeUserRole = 'owner';
   } else if (currentUser) {
     if (activeTrip.owner_id === currentUser.id) {
       activeUserRole = 'owner';
     } else {
       const { data } = await supabase.from('trip_members').select('role').eq('trip_id', activeTrip.id).eq('user_id', currentUser.id).single();
-      if (data && data.role) {
-        activeUserRole = data.role; // Explicit invite overrides public setting
-      } else if (activeTrip.visibility === 'public_edit') {
-        activeUserRole = 'editor';
-      }
+      if (data && data.role) activeUserRole = data.role;
+      else if (activeTrip.visibility === 'public_edit') activeUserRole = 'editor';
     }
   }
 
-  // 2. LOCK DOWN UI BUTTONS
   const canEdit = activeUserRole !== 'viewer';
   DOM.addDayBtn.style.display = canEdit ? 'block' : 'none';
   DOM.addActBtn.style.display = canEdit ? 'block' : 'none';
@@ -82,18 +56,13 @@ export async function loadTripDays(trip) {
   renderDaysList();
 }
 
-// -------------------------------------------------------------------
-// DAYS MANAGEMENT
-// -------------------------------------------------------------------
 function setupDayManager() {
   DOM.addDayBtn.onclick = () => {
     if (activeUserRole === 'viewer') return;
     playClick(); DOM.dayDateInp.value = ''; DOM.dayTitleInp.value = '';
     DOM.dayModalBg.classList.remove('hidden'); setTimeout(() => DOM.dayModal.classList.remove('translate-y-full'), 10);
   };
-  DOM.closeDayBtn.onclick = () => {
-    playClick(); DOM.dayModal.classList.add('translate-y-full'); setTimeout(() => DOM.dayModalBg.classList.add('hidden'), 300);
-  };
+  DOM.closeDayBtn.onclick = () => { playClick(); DOM.dayModal.classList.add('translate-y-full'); setTimeout(() => DOM.dayModalBg.classList.add('hidden'), 300); };
   DOM.saveDayBtn.onclick = async () => {
     if (activeUserRole === 'viewer') return;
     const selectedDate = DOM.dayDateInp.value;
@@ -102,13 +71,9 @@ function setupDayManager() {
 
     const title = DOM.dayTitleInp.value.trim() || `Day ${activeTrip.days.length + 1}`;
     playSuccess();
-    
     activeTrip.days.push({ id: 'day-' + Date.now(), date: selectedDate, title, activities: [] });
     activeTrip.days.sort((a, b) => new Date(a.date) - new Date(b.date));
-    
-    await updateTrip(activeTrip); 
-    DOM.closeDayBtn.click(); 
-    renderDaysList();
+    await updateTrip(activeTrip); DOM.closeDayBtn.click(); renderDaysList();
   };
 }
 
@@ -117,11 +82,7 @@ function renderDaysList() {
   const canEdit = activeUserRole !== 'viewer';
 
   if (activeTrip.days.length === 0) {
-    DOM.daysList.innerHTML = `
-      <div class="text-center py-12 bg-white rounded-2xl border-2 border-dashed border-gray-200">
-        <h3 class="text-xl font-bold text-gray-400 mb-2">No days planned yet.</h3>
-        ${canEdit ? `<p class="text-sm text-gray-400">Click '+ Add Day' to start building.</p>` : ``}
-      </div>`;
+    DOM.daysList.innerHTML = `<div class="text-center py-12 bg-white rounded-2xl border-2 border-dashed border-gray-200"><h3 class="text-xl font-bold text-gray-400 mb-2">No days planned yet.</h3>${canEdit ? `<p class="text-sm text-gray-400">Click '+ Add Day' to start building.</p>` : ``}</div>`;
     return;
   }
 
@@ -130,7 +91,6 @@ function renderDaysList() {
     card.className = 'day-card p-5 flex items-center justify-between mb-3';
     if(!day.activities) day.activities = [];
     let dests = 0; day.activities.forEach(a => { if(a.type === 'destination') dests++; });
-    
     const displayDate = new Date(day.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
     card.innerHTML = `
       <div class="flex items-center gap-4">
@@ -152,10 +112,7 @@ function openDayEditor(dayId) {
   activeDayId = dayId;
   const day = activeTrip.days.find(d => d.id === dayId);
   DOM.dayTitle.textContent = day.title;
-  switchView('day'); 
-  recalculateTimes(); 
-  renderDay(DOM.itineraryContainer); 
-  setupActivityEditor(DOM.itineraryContainer);
+  switchView('day'); recalculateTimes(); renderDay(DOM.itineraryContainer); setupActivityEditor(DOM.itineraryContainer);
 }
 
 async function recalculateTimes() {
@@ -173,9 +130,6 @@ async function recalculateTimes() {
   await updateTrip(activeTrip);
 }
 
-// -------------------------------------------------------------------
-// ACTIVITY EDITOR
-// -------------------------------------------------------------------
 function setupActivityEditor(container) {
   const setType = (type) => {
     playClick(); DOM.typeVal.value = type;
@@ -232,9 +186,7 @@ function setupActivityEditor(container) {
       day.activities.push({ id: 'act-' + Date.now(), type, title, duration: dur, cost, startTime: inputTime, manualTime: true, transitMode: type === 'transit' ? transitMode : null });
     }
     day.activities.sort((a,b) => a.startTime - b.startTime);
-    playSuccess(); closeActModal(); 
-    await recalculateTimes(); 
-    renderDay(DOM.itineraryContainer);
+    playSuccess(); closeActModal(); await recalculateTimes(); renderDay(DOM.itineraryContainer);
   };
 
   DOM.btnDelete.onclick = async () => {
@@ -242,12 +194,9 @@ function setupActivityEditor(container) {
     if(confirm("Delete this activity?")) {
       playClick(); const day = activeTrip.days.find(d => d.id === activeDayId);
       day.activities = day.activities.filter(a => a.id !== editingActivityId);
-      closeActModal(); 
-      await recalculateTimes(); 
-      renderDay(DOM.itineraryContainer);
+      closeActModal(); await recalculateTimes(); renderDay(DOM.itineraryContainer);
     }
   };
-  
   DOM.btnClose.onclick = () => { playClick(); closeActModal(); };
   
   container.addEventListener('click', (e) => {
@@ -255,8 +204,7 @@ function setupActivityEditor(container) {
     const target = e.target.closest('.edit-act-target');
     if(target) { 
       if (activeUserRole === 'viewer') return;
-      playClick(); 
-      openEditModal(target.dataset.id); 
+      playClick(); openEditModal(target.dataset.id); 
     }
   });
 }
@@ -273,9 +221,6 @@ function openEditModal(id) {
 function openActModal() { DOM.bg.classList.remove('hidden'); setTimeout(() => DOM.modal.classList.remove('translate-y-full'), 10); }
 function closeActModal() { DOM.modal.classList.add('translate-y-full'); setTimeout(() => DOM.bg.classList.add('hidden'), 300); }
 
-// -------------------------------------------------------------------
-// DRAG AND DROP & RENDERING
-// -------------------------------------------------------------------
 function handleDragDrop(container) {
   let draggedItemIndex = null;
   container.addEventListener('dragstart', (e) => {
@@ -295,8 +240,7 @@ function handleDragDrop(container) {
     const itemToMove = day.activities.splice(draggedItemIndex, 1)[0];
     day.activities.splice(targetIndex, 0, itemToMove);
     itemToMove.manualTime = false; 
-    await recalculateTimes(); 
-    renderDay(document.getElementById('itinerary-container'));
+    await recalculateTimes(); renderDay(document.getElementById('itinerary-container'));
   });
 }
 
@@ -305,20 +249,14 @@ function renderDay(container) {
   const canEdit = activeUserRole !== 'viewer';
   
   if (!day || !day.activities || day.activities.length === 0) {
-    container.innerHTML = `
-      <div class="text-center py-16 bg-white rounded-2xl border-2 border-dashed border-gray-200">
-        <h3 class="text-xl font-bold text-gray-400 mb-2">No activities planned.</h3>
-        ${canEdit ? `<p class="text-sm text-gray-400 mb-6">Click '+ Activity' to build your day.</p>` : ''}
-      </div>`;
+    container.innerHTML = `<div class="text-center py-16 bg-white rounded-2xl border-2 border-dashed border-gray-200"><h3 class="text-xl font-bold text-gray-400 mb-2">No activities planned.</h3>${canEdit ? `<p class="text-sm text-gray-400 mb-6">Click '+ Activity' to build your day.</p>` : ''}</div>`;
     return;
   }
 
   let html = `<div id="activity-list" class="space-y-3 relative pb-12">`;
   day.activities.forEach((act, index) => {
-    const endTime = minutesToStr(act.startTime + act.duration);
-    const timeDisplay = `${minutesToStr(act.startTime)} - ${endTime}`;
+    const timeDisplay = minutesToStr(act.startTime); // UPDATED: Only show start time
     
-    // Lock UI visual states if Viewer
     const dragAttr = canEdit ? `draggable="true"` : ``;
     const editClass = canEdit ? `edit-act-target cursor-pointer hover:shadow-md` : ``;
     const dragIcon = canEdit ? `<div class="text-gray-300 cursor-grab hover:text-gray-500 flex items-center px-2 drag-handle"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M4 8h16M4 16h16"></path></svg></div>` : ``;

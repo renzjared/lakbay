@@ -1,17 +1,3 @@
-<!-- Open Graph Meta Tags for Discord, iMessage, Facebook -->
-<meta property="og:title" content="Lakbay | Your Journey Planner" />
-<meta property="og:type" content="website" />
-<meta property="og:url" content="https://renzjared.github.io/lakbay/" />
-<meta property="og:image" content="https://renzjared.github.io/lakbay/banner.png" />
-<meta property="og:description" content="Someone invited you to collaborate on an upcoming adventure! Jump in to view the itinerary and plan the journey together." />
-<meta name="theme-color" content="#58cc02" />
-
-<!-- Twitter Card Meta Tags -->
-<meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="Lakbay | Your Journey Planner" />
-<meta name="twitter:description" content="Someone invited you to collaborate on an upcoming adventure! Jump in to view the itinerary and plan the journey together." />
-<meta name="twitter:image" content="https://renzjared.github.io/lakbay/banner.png" />
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -20,7 +6,6 @@
   <title>Journey Planner</title>
   <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Markdown Parser -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script>
     tailwind.config = { theme: { extend: { fontFamily: { sans: ['Nunito', 'sans-serif'], } } } }
@@ -29,11 +14,10 @@
 </head>
 <body class="bg-[#f7f7f7] text-[#4b4b4b] h-screen overflow-hidden flex flex-col md:flex-row">
   
-  <!-- GLOBAL Sidebar (Desktop) -->
   <aside class="w-full md:w-64 bg-white border-b md:border-b-0 md:border-r border-gray-200 p-4 flex flex-row md:flex-col justify-between items-center md:items-start shrink-0 z-20 md:h-full">
     <div class="w-full">
-      <h1 class="text-2xl font-extrabold text-[#58cc02] hidden md:block mb-8 cursor-pointer" id="logo-btn">Journey Planner</h1>
-      <h1 class="text-2xl font-extrabold text-[#58cc02] md:hidden cursor-pointer" id="logo-btn-mobile">Journey</h1>
+      <h1 class="text-2xl font-extrabold text-[#58cc02] hidden md:block mb-8 cursor-pointer" id="logo-btn">Lakbay</h1>
+      <h1 class="text-2xl font-extrabold text-[#58cc02] md:hidden cursor-pointer" id="logo-btn-mobile">Lakbay</h1>
       
       <div class="hidden md:flex flex-col gap-2 w-full mt-2 md:mt-0" id="desktop-global-nav">
         <button data-target="trips" class="global-nav-btn nav-btn-active bg-[#e5f7ff] text-[#1cb0f6] w-full py-3 px-4 rounded-xl font-bold text-sm uppercase flex items-center gap-3 transition-colors">
@@ -42,13 +26,9 @@
         <button class="global-nav-btn text-gray-400 hover:bg-gray-100 w-full py-3 px-4 rounded-xl font-bold text-sm uppercase flex items-center gap-3 transition-colors">
           <span class="text-xl">👥</span> Friends
         </button>
-        <button class="global-nav-btn text-gray-400 hover:bg-gray-100 w-full py-3 px-4 rounded-xl font-bold text-sm uppercase flex items-center gap-3 transition-colors">
-          <span class="text-xl">⚙️</span> Settings
-        </button>
       </div>
     </div>
     
-    <!-- Auth & Profile Container -->
     <div id="auth-container" class="mt-auto pt-4 border-t border-gray-100 w-full hidden md:block">
       <button id="login-discord-btn" class="w-full bg-[#5865F2] text-white py-3 px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-[#4752C4] transition-colors shadow-sm">
         <span>Discord Login</span>
@@ -63,7 +43,6 @@
     </div>
   </aside>
 
-  <!-- Main Content Area -->
   <main class="flex-1 overflow-y-auto bg-[#f7f7f7] relative h-full w-full pb-24">
     
     <!-- VIEW: Trips List -->
@@ -75,7 +54,7 @@
       <div id="trip-list" class="space-y-4"></div>
     </div>
 
-    <!-- VIEW: Days (Itinerary Main) -->
+    <!-- VIEW: Days -->
     <div id="days-view" class="view-section hidden p-4 sm:p-8 max-w-2xl mx-auto">
       <div class="flex justify-between items-center mb-6">
         <h2 id="days-trip-title" class="text-2xl font-extrabold text-[#4b4b4b]">Itinerary</h2>
@@ -109,20 +88,34 @@
       <div id="notes-list" class="space-y-4"></div>
     </div>
 
-    <!-- VIEW: Map -->
-    <div id="map-view" class="view-section hidden p-4 sm:p-8 max-w-2xl mx-auto h-full flex flex-col">
-      <h2 class="text-2xl font-extrabold text-[#4b4b4b] mb-6">Trip Map</h2>
-      <div class="flex-1 bg-white rounded-2xl border-2 border-[#e5e5e5] flex items-center justify-center min-h-[400px]">
-        <div class="text-center">
-          <span class="text-4xl block mb-4">🗺️</span>
-          <h3 class="font-bold text-gray-400">Map view coming soon!</h3>
-        </div>
+    <!-- VIEW: Splitter (Group Expenses) -->
+    <div id="splitter-view" class="view-section hidden p-4 sm:p-8 max-w-2xl mx-auto">
+      <div class="flex justify-between items-center mb-6">
+        <h2 class="text-2xl font-extrabold text-[#4b4b4b]">Expense Splitter</h2>
+        <button id="add-expense-btn" class="bg-[#ce82ff] text-white px-4 py-2 rounded-xl font-bold uppercase hover:bg-[#b861ec] transition-colors shadow-sm">+ Expense</button>
+      </div>
+      
+      <!-- Balances Summary -->
+      <div class="bg-white rounded-2xl p-5 border-2 border-[#e5e5e5] mb-6">
+        <h3 class="font-bold text-gray-400 uppercase text-xs tracking-wider mb-4">Who owes who?</h3>
+        <div id="debts-container" class="space-y-3"></div>
+      </div>
+
+      <!-- Expense History -->
+      <h3 class="font-bold text-gray-400 uppercase text-xs tracking-wider mb-4">All Expenses</h3>
+      <div id="expenses-list" class="space-y-3"></div>
+    </div>
+
+    <!-- VIEW: Survival Hub -->
+    <div id="hub-view" class="view-section hidden p-4 sm:p-8 max-w-2xl mx-auto h-full">
+      <h2 class="text-2xl font-extrabold text-[#4b4b4b] mb-6">Survival Hub</h2>
+      <div id="hub-container" class="space-y-6">
+        <div class="text-center py-12 text-gray-400 font-bold">Loading destination data...</div>
       </div>
     </div>
 
   </main>
 
-  <!-- BOTTOM NAV: Global (Mobile Only) -->
   <nav id="global-bottom-nav" class="md:hidden fixed bottom-0 w-full bg-white border-t-2 border-gray-200 flex justify-around items-center pb-safe pt-2 z-30 transition-transform">
     <button data-target="trips" class="global-nav-mobile flex flex-col items-center p-2 text-[#1cb0f6]">
       <span class="text-2xl mb-1">🏠</span><span class="text-[10px] font-bold uppercase">Trips</span>
@@ -135,28 +128,29 @@
     </button>
   </nav>
 
-  <!-- BOTTOM NAV: Active Trip (Desktop & Mobile) -->
-  <nav id="trip-bottom-nav" class="hidden fixed bottom-0 right-0 w-full md:w-[calc(100%-16rem)] bg-white border-t-2 border-gray-200 flex justify-around items-center pb-safe pt-2 z-30">
-    <button data-target="trips" class="trip-nav-btn flex flex-col items-center p-2 text-gray-400 hover:text-gray-600">
+  <!-- Made scrollable to fit more features -->
+  <nav id="trip-bottom-nav" class="hidden fixed bottom-0 right-0 w-full md:w-[calc(100%-16rem)] bg-white border-t-2 border-gray-200 flex items-center overflow-x-auto no-scrollbar pb-safe pt-2 px-2 z-30 space-x-2">
+    <button data-target="trips" class="trip-nav-btn shrink-0 flex flex-col items-center p-2 w-16 text-gray-400 hover:text-gray-600">
       <span class="text-2xl mb-1">⬅️</span><span class="text-[10px] font-bold uppercase">Home</span>
     </button>
-    <button data-target="days" class="trip-nav-btn flex flex-col items-center p-2 text-gray-400 hover:text-[#1cb0f6]">
+    <button data-target="days" class="trip-nav-btn shrink-0 flex flex-col items-center p-2 w-16 text-gray-400 hover:text-[#1cb0f6]">
       <span class="text-2xl mb-1">📅</span><span class="text-[10px] font-bold uppercase">Days</span>
     </button>
-    <button data-target="day" class="trip-nav-btn flex flex-col items-center p-2 text-gray-400 hover:text-[#1cb0f6]">
+    <button data-target="day" class="trip-nav-btn shrink-0 flex flex-col items-center p-2 w-16 text-gray-400 hover:text-[#1cb0f6]">
       <span class="text-2xl mb-1">📍</span><span class="text-[10px] font-bold uppercase">Editor</span>
     </button>
-    <button data-target="notes" class="trip-nav-btn flex flex-col items-center p-2 text-gray-400 hover:text-[#1cb0f6]">
+    <button data-target="notes" class="trip-nav-btn shrink-0 flex flex-col items-center p-2 w-16 text-gray-400 hover:text-[#1cb0f6]">
       <span class="text-2xl mb-1">📝</span><span class="text-[10px] font-bold uppercase">Notes</span>
     </button>
-    <button data-target="map" class="trip-nav-btn flex flex-col items-center p-2 text-gray-400 hover:text-[#1cb0f6]">
-      <span class="text-2xl mb-1">🗺️</span><span class="text-[10px] font-bold uppercase">Map</span>
+    <button data-target="splitter" class="trip-nav-btn shrink-0 flex flex-col items-center p-2 w-16 text-gray-400 hover:text-[#ce82ff]">
+      <span class="text-2xl mb-1">💸</span><span class="text-[10px] font-bold uppercase">Split</span>
+    </button>
+    <button data-target="hub" class="trip-nav-btn shrink-0 flex flex-col items-center p-2 w-16 text-gray-400 hover:text-[#ff9600]">
+      <span class="text-2xl mb-1">🆘</span><span class="text-[10px] font-bold uppercase">Hub</span>
     </button>
   </nav>
 
   <!-- MODALS -->
-
-  <!-- Add Trip Modal -->
   <div id="modal-backdrop" class="fixed inset-0 bg-black bg-opacity-40 hidden flex items-end sm:items-center justify-center z-50">
     <div id="add-trip-modal" class="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 transform translate-y-full transition-transform duration-300 shadow-2xl">
       <h2 class="text-2xl font-bold mb-4 text-[#4b4b4b]">Where to?</h2>
@@ -175,7 +169,6 @@
     </div>
   </div>
 
-  <!-- Add Day Modal -->
   <div id="day-backdrop" class="fixed inset-0 bg-black bg-opacity-40 hidden flex items-end sm:items-center justify-center z-50">
     <div id="day-modal" class="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 transform translate-y-full transition-transform duration-300 shadow-2xl">
       <h2 class="text-2xl font-bold mb-4 text-[#4b4b4b]">Add a Day</h2>
@@ -188,7 +181,6 @@
     </div>
   </div>
 
-  <!-- Add/Edit Activity Modal -->
   <div id="activity-backdrop" class="fixed inset-0 bg-black bg-opacity-40 hidden flex items-end sm:items-center justify-center z-50">
     <div id="activity-modal" class="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 transform translate-y-full transition-transform duration-300 shadow-2xl overflow-y-auto max-h-[90vh]">
       <div class="flex justify-between items-center mb-4">
@@ -224,18 +216,11 @@
           <input type="number" id="act-duration" value="60" class="w-full bg-[#f7f7f7] border-2 border-[#e5e5e5] rounded-xl p-3 font-bold outline-none focus:border-[#1cb0f6] text-gray-600">
         </div>
       </div>
-
-      <div class="mb-6" id="cost-container">
-        <label class="text-xs font-bold text-gray-400 uppercase tracking-wider pl-2">Est. Cost</label>
-        <input type="number" id="act-cost" placeholder="0" class="w-full bg-[#f7f7f7] border-2 border-[#e5e5e5] rounded-xl p-3 font-bold outline-none focus:border-[#1cb0f6] text-gray-600">
-      </div>
-      
       <button id="save-act-btn" class="duo-btn duo-btn-primary w-full text-lg py-3 rounded-2xl font-bold uppercase tracking-wide">Save Activity</button>
       <button id="close-act-btn" class="mt-4 w-full text-center text-gray-400 font-bold uppercase tracking-wide py-2">Cancel</button>
     </div>
   </div>
 
-  <!-- Note Editor Modal -->
   <div id="note-backdrop" class="fixed inset-0 bg-black bg-opacity-40 hidden flex items-end sm:items-center justify-center z-50">
     <div id="note-modal" class="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 transform translate-y-full transition-transform duration-300 shadow-2xl h-[80vh] flex flex-col">
       <div class="flex justify-between items-center mb-4">
@@ -244,21 +229,17 @@
       </div>
       <input type="text" id="note-title" placeholder="Note Title" class="w-full bg-[#f7f7f7] border-2 border-[#e5e5e5] rounded-xl p-3 font-bold outline-none focus:border-[#ff9600] mb-4">
       <textarea id="note-content" placeholder="Markdown supported! (# Heading, - List, [Link](url))" class="flex-1 w-full bg-[#f7f7f7] border-2 border-[#e5e5e5] rounded-xl p-4 font-mono text-sm outline-none focus:border-[#ff9600] resize-none mb-4"></textarea>
-      
       <button id="save-note-btn" class="duo-btn bg-[#ff9600] text-white border-[#e08400] shadow-[0_6px_0_0_#e08400] active:shadow-[0_0px_0_0_#e08400] w-full text-lg py-3 rounded-2xl font-bold uppercase tracking-wide">Save Note</button>
       <button id="close-note-btn" class="mt-4 w-full text-center text-gray-400 font-bold uppercase py-2">Cancel</button>
     </div>
   </div>
 
-<!-- Google Docs Style Share Modal -->
   <div id="share-backdrop" class="fixed inset-0 bg-black bg-opacity-40 hidden flex items-center justify-center z-50">
     <div id="share-modal" class="bg-white w-full max-w-lg rounded-3xl p-6 transform shadow-2xl flex flex-col max-h-[90vh]">
       <h2 class="text-2xl font-bold mb-4 text-[#4b4b4b]">Share Trip</h2>
-      
-      <!-- Add People Section -->
       <div class="mb-2">
         <div class="flex gap-2">
-          <input type="text" id="invite-username" placeholder="Add people by Discord username..." class="flex-1 bg-[#f7f7f7] border-2 border-[#e5e5e5] rounded-xl p-3 font-bold outline-none focus:border-[#1cb0f6]">
+          <input type="text" id="invite-username" placeholder="Add by Discord username..." class="flex-1 bg-[#f7f7f7] border-2 border-[#e5e5e5] rounded-xl p-3 font-bold outline-none focus:border-[#1cb0f6]">
           <select id="invite-role" class="bg-[#f7f7f7] border-2 border-[#e5e5e5] rounded-xl p-3 font-bold outline-none focus:border-[#1cb0f6] w-28">
             <option value="viewer">Viewer</option>
             <option value="editor">Editor</option>
@@ -267,14 +248,8 @@
         </div>
         <p id="invite-warning" class="text-xs text-amber-500 font-bold mt-2 hidden">⚠️ User hasn't joined Lakbay yet, but they will be added once they log in!</p>
       </div>
-
-      <!-- People with Access List -->
       <h3 class="font-bold text-gray-400 uppercase text-xs tracking-wider mb-2 mt-4">People with access</h3>
-      <div id="collaborators-list" class="space-y-2 overflow-y-auto mb-6 flex-1 min-h-[100px]">
-        <!-- Injected via JS -->
-      </div>
-
-      <!-- General Access Section -->
+      <div id="collaborators-list" class="space-y-2 overflow-y-auto mb-6 flex-1 min-h-[100px]"></div>
       <h3 class="font-bold text-gray-400 uppercase text-xs tracking-wider mb-2">General access</h3>
       <div class="bg-gray-50 rounded-xl p-3 flex gap-3 items-center border-2 border-gray-100 mb-6">
         <div id="ga-icon" class="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-xl shrink-0">🔒</div>
@@ -287,18 +262,13 @@
           <p id="ga-desc" class="text-xs text-gray-400 font-bold mt-1">Only added people can access</p>
         </div>
       </div>
-
-      <!-- Footer Actions -->
       <div class="flex justify-between items-center pt-4 border-t-2 border-gray-100">
-        <button id="copy-link-btn" class="text-[#1cb0f6] font-bold px-4 py-2 rounded-xl hover:bg-[#e5f7ff] transition-colors flex items-center gap-2">
-          🔗 Copy link
-        </button>
+        <button id="copy-link-btn" class="text-[#1cb0f6] font-bold px-4 py-2 rounded-xl hover:bg-[#e5f7ff] transition-colors flex items-center gap-2">🔗 Copy link</button>
         <button id="close-share-btn" class="bg-[#58cc02] text-white px-8 py-2 rounded-xl font-bold hover:bg-[#58a700] transition-colors shadow-sm">Done</button>
       </div>
     </div>
   </div>
 
-  <!-- Received Invite Popup -->
   <div id="invite-popup-backdrop" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center z-[60]">
     <div class="bg-white w-full max-w-sm rounded-3xl p-6 text-center shadow-2xl transform scale-95 transition-transform duration-300" id="invite-popup-card">
       <div class="text-5xl mb-4">💌</div>
@@ -307,6 +277,38 @@
       <div class="flex gap-3">
         <button id="decline-invite-btn" class="flex-1 py-3 rounded-xl font-bold text-gray-400 bg-gray-100 hover:bg-gray-200">Decline</button>
         <button id="accept-invite-btn" class="flex-1 py-3 rounded-xl font-bold text-white bg-[#58cc02] duo-btn-primary">Join Trip</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Expense Modal -->
+  <div id="expense-backdrop" class="fixed inset-0 bg-black bg-opacity-40 hidden flex items-end sm:items-center justify-center z-50">
+    <div id="expense-modal" class="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 transform translate-y-full transition-transform duration-300 shadow-2xl h-[80vh] flex flex-col">
+      <div class="flex justify-between items-center mb-4">
+        <h2 class="text-2xl font-bold text-[#4b4b4b]">Add Expense</h2>
+        <button id="delete-expense-btn" class="text-red-500 font-bold hidden px-3 py-1 bg-red-50 rounded-lg hover:bg-red-100">Delete</button>
+      </div>
+      
+      <input type="text" id="expense-title" placeholder="What was this for? (e.g. Dinner)" class="w-full bg-[#f7f7f7] border-2 border-[#e5e5e5] rounded-xl p-3 font-bold outline-none focus:border-[#ce82ff] mb-4">
+      
+      <div class="mb-4 relative">
+        <span class="absolute left-4 top-3 font-extrabold text-gray-400 text-lg">¥</span>
+        <input type="number" id="expense-amount" placeholder="0.00" class="w-full bg-[#f7f7f7] border-2 border-[#e5e5e5] rounded-xl p-3 pl-8 font-bold outline-none focus:border-[#ce82ff]">
+      </div>
+
+      <label class="text-xs font-bold text-gray-400 uppercase tracking-wider pl-2 mb-1 block">Who Paid?</label>
+      <select id="expense-payer" class="w-full bg-[#f7f7f7] border-2 border-[#e5e5e5] rounded-xl p-3 font-bold outline-none focus:border-[#ce82ff] mb-4 text-[#4b4b4b]">
+        <!-- Injected via JS -->
+      </select>
+
+      <label class="text-xs font-bold text-gray-400 uppercase tracking-wider pl-2 mb-1 block">Split Between (Equal Shares)</label>
+      <div id="expense-split-list" class="bg-gray-50 border-2 border-[#e5e5e5] rounded-xl p-3 mb-6 space-y-2 max-h-32 overflow-y-auto">
+        <!-- Checkboxes injected via JS -->
+      </div>
+      
+      <div class="mt-auto">
+        <button id="save-expense-btn" class="duo-btn bg-[#ce82ff] text-white border-[#b861ec] shadow-[0_6px_0_0_#b861ec] active:shadow-[0_0px_0_0_#b861ec] w-full text-lg py-3 rounded-2xl font-bold uppercase tracking-wide">Save Expense</button>
+        <button id="close-expense-btn" class="mt-4 w-full text-center text-gray-400 font-bold uppercase py-2">Cancel</button>
       </div>
     </div>
   </div>
