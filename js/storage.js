@@ -28,16 +28,35 @@ export async function getTrips() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return []; 
 
-    const { data, error } = await supabase
+    // 1. Fetch trips where you are the owner
+    const { data: ownedTrips, error: error1 } = await supabase
       .from('trips')
-      .select(`*, trip_members!inner(user_id)`)
-      .or(`owner_id.eq.${user.id},trip_members.user_id.eq.${user.id}`)
-      .order('created_at', { ascending: true });
+      .select('*')
+      .eq('owner_id', user.id);
       
-    if (error && error.code !== 'PGRST116') console.error("Fetch Error:", error);
-    const cleanData = (data || []).map(t => { delete t.trip_members; return t; });
-    return Array.from(new Map(cleanData.map(item => [item.id, item])).values());
+    if (error1) console.error("Error fetching owned trips:", error1);
+
+    // 2. Fetch trips where you are a collaborator (member)
+    const { data: sharedData, error: error2 } = await supabase
+      .from('trip_members')
+      .select('trips(*)')
+      .eq('user_id', user.id);
+
+    if (error2) console.error("Error fetching shared trips:", error2);
+
+    // Extract the nested trip objects from the shared data
+    const sharedTrips = (sharedData || [])
+      .map(row => row.trips)
+      .filter(trip => trip !== null); // Filter out any nulls if a trip was deleted
+
+    // 3. Combine, remove any duplicates, and sort by date created
+    const allTrips = [...(ownedTrips || []), ...sharedTrips];
+    const uniqueTrips = Array.from(new Map(allTrips.map(item => [item.id, item])).values());
+    
+    return uniqueTrips.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    
   } else {
+    // LocalStorage fallback
     const data = localStorage.getItem(DB_KEY);
     return data ? JSON.parse(data) : [];
   }
