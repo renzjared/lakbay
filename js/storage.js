@@ -28,6 +28,13 @@ export async function getTrips() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return []; 
 
+    // Fetch my profile to get my username to check for pending invites
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('username')
+      .eq('id', user.id)
+      .single();
+    
     // 1. Fetch trips where you are the owner
     const { data: ownedTrips, error: error1 } = await supabase
       .from('trips')
@@ -36,18 +43,23 @@ export async function getTrips() {
       
     if (error1) console.error("Error fetching owned trips:", error1);
 
-    // 2. Fetch trips where you are a collaborator (member)
+    // 2. Fetch trips where you are a collaborator (member OR pending username)
+    let memberQuery = `user_id.eq.${user.id}`;
+    if (profile && profile.username) {
+      memberQuery += `,pending_username.ilike.${profile.username}`;
+    }
+
     const { data: sharedData, error: error2 } = await supabase
       .from('trip_members')
       .select('trips(*)')
-      .eq('user_id', user.id);
+      .or(memberQuery);
 
     if (error2) console.error("Error fetching shared trips:", error2);
 
     // Extract the nested trip objects from the shared data
     const sharedTrips = (sharedData || [])
       .map(row => row.trips)
-      .filter(trip => trip !== null); // Filter out any nulls if a trip was deleted
+      .filter(trip => trip !== null);
 
     // 3. Combine, remove any duplicates, and sort by date created
     const allTrips = [...(ownedTrips || []), ...sharedTrips];
@@ -63,9 +75,21 @@ export async function getTrips() {
 }
 
 export async function getTrip(id) {
+  if (useSupabase) {
+    // RLS ensures logged-out users can ONLY fetch this if visibility is public_view or public_edit
+    const { data, error } = await supabase.from('trips').select('*').eq('id', id).single();
+    if (error) {
+      console.error("Error fetching single trip:", error);
+      return null;
+    }
+    return data;
+  }
+  
+  // Local fallback
   const trips = await getTrips();
   return trips.find(t => t.id === id);
 }
+
 
 export async function updateTrip(updatedTrip) {
   if (useSupabase) {
