@@ -90,7 +90,6 @@ export async function getTrip(id) {
   return trips.find(t => t.id === id);
 }
 
-
 export async function updateTrip(updatedTrip) {
   if (useSupabase) {
     const { error } = await supabase.from('trips').update({
@@ -100,7 +99,14 @@ export async function updateTrip(updatedTrip) {
       notes: updatedTrip.notes,
       visibility: updatedTrip.visibility
     }).eq('id', updatedTrip.id);
-    if (error) console.error("Update Error:", error);
+    
+    if (error) {
+      console.error("Update Error:", error);
+      alert("Action denied: You don't have permission to edit this.");
+      window.location.reload(); // Force refresh to wipe unauthorized visual edits
+      return false;
+    }
+    return true;
   } else {
     const trips = await getTrips();
     const index = trips.findIndex(t => t.id === updatedTrip.id);
@@ -108,6 +114,7 @@ export async function updateTrip(updatedTrip) {
       trips[index] = updatedTrip;
       localStorage.setItem(DB_KEY, JSON.stringify(trips));
     }
+    return true;
   }
 }
 
