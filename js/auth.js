@@ -24,7 +24,7 @@ export async function initAuth() {
   });
 
   const login = async () => {
-    const redirectUrl = window.location.origin + window.location.pathname;
+    const redirectUrl = window.location.href;
     await supabase.auth.signInWithOAuth({ 
       provider: 'discord', 
       options: { redirectTo: redirectUrl } 
@@ -41,6 +41,7 @@ export async function initAuth() {
 }
 
 async function handleSession(session) {
+  document.getElementById('mobile-login-inline')?.classList.toggle('hidden', !!session);
   if (session) {
     currentUser = session.user;
     DOM.loginBtn.classList.add('hidden');
@@ -49,7 +50,7 @@ async function handleSession(session) {
     DOM.profileDiv.classList.add('flex');
     
     const meta = currentUser.user_metadata;
-    DOM.name.textContent = meta.custom_claims?.global_name || meta.full_name;
+    DOM.name.textContent = meta.display_name || meta.custom_claims?.global_name || meta.full_name;
     DOM.avatar.src = meta.avatar_url;
   } else {
     currentUser = null;
@@ -61,6 +62,7 @@ async function handleSession(session) {
 
   // Always check the URL for invites, whether logged in or out
   await checkUrlForInvites();
+  document.dispatchEvent(new CustomEvent('lakbay:auth-changed', { detail: { loggedIn: !!session } }));
 }
 
 async function checkUrlForInvites() {
@@ -69,17 +71,9 @@ async function checkUrlForInvites() {
   
   if (!inviteTripId) return;
 
-  // SCENARIO 1: User is completely logged out
-  if (!currentUser) {
-    const publicTrip = await getTrip(inviteTripId);
-    
-    // If getTrip returned data, it means the RLS policies allowed it (it's public!)
-    if (publicTrip) {
-      loadTripDays(publicTrip);
-      switchView('days');
-    }
-    return;
-  }
+  // Trip data is only available after Discord sign-in. Keep the invite in the
+  // URL so the authenticated session can continue the join flow afterward.
+  if (!currentUser) return;
 
   // SCENARIO 2: User is logged in
   const { data: trip } = await supabase
@@ -125,6 +119,11 @@ async function checkUrlForInvites() {
       user_id: currentUser.id, 
       role: 'viewer' 
     });
+
+    const nickname = prompt(`Welcome to ${trip.destination}! Choose a nickname for this trip, or leave it blank to use your Discord name.`, '');
+    if (nickname?.trim()) await supabase.auth.updateUser({ data: { display_name: nickname.trim() } });
+    const avatarUrl = prompt('Want to use a different profile photo? Paste an image URL, or leave blank to keep your Discord photo.', '');
+    if (avatarUrl?.trim()) await supabase.auth.updateUser({ data: { avatar_url: avatarUrl.trim() } });
     
     // Clean up the URL and reload to fetch fresh data
     window.history.replaceState({}, document.title, window.location.pathname);

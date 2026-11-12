@@ -63,6 +63,13 @@ export async function renderSplitter() {
     }
     DOM.expensesList.appendChild(card);
   });
+
+  (activeTrip.workspace_data?.payments || []).forEach(payment => {
+    const from = tripUsers.find(u => u.name.toLowerCase() === String(payment.from).toLowerCase());
+    const to = tripUsers.find(u => u.name.toLowerCase() === String(payment.to).toLowerCase());
+    if (from && balances[from.id] !== undefined) balances[from.id] += Number(payment.amount) || 0;
+    if (to && balances[to.id] !== undefined) balances[to.id] -= Number(payment.amount) || 0;
+  });
 }
 
 function renderDebts() {

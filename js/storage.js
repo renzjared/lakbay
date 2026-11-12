@@ -52,14 +52,25 @@ export async function getTrip(id) {
 
 export async function updateTrip(updatedTrip) {
   if (useSupabase) {
-    const { error } = await supabase.from('trips').update({
+    const values = {
       emoji: updatedTrip.emoji,
       destination: updatedTrip.destination,
       days: updatedTrip.days,
       notes: updatedTrip.notes,
       expenses: updatedTrip.expenses, // Ensure expenses are saved
       visibility: updatedTrip.visibility
-    }).eq('id', updatedTrip.id);
+    };
+    if (updatedTrip.workspace_data !== undefined) values.workspace_data = updatedTrip.workspace_data;
+    let { error } = await supabase.from('trips').update(values).eq('id', updatedTrip.id);
+
+    // Keep core trip actions working on existing databases before the optional
+    // workspace_data migration is applied. New workspace data is cached locally.
+    if (error && updatedTrip.workspace_data !== undefined && /workspace_data/i.test(error.message || '')) {
+      const { workspace_data, ...legacyValues } = values;
+      const retry = await supabase.from('trips').update(legacyValues).eq('id', updatedTrip.id);
+      error = retry.error;
+      if (!error) localStorage.setItem(`lakbay_${updatedTrip.id}_workspace_data`, JSON.stringify(updatedTrip.workspace_data));
+    }
     
     if (error) {
       alert("Action denied: You don't have permission to edit this.");
@@ -87,9 +98,10 @@ export async function createTrip(emoji, destination) {
       owner_id: user.id, visibility: 'private'
     };
     const { data } = await supabase.from('trips').insert([newTrip]).select();
+    if (data?.[0]) data[0].workspace_data ||= {};
     return data ? data[0] : null;
   } else {
-    const newTrip = { emoji: emoji || '📍', destination, days: [], notes: [], expenses: [] };
+    const newTrip = { emoji: emoji || '📍', destination, days: [], notes: [], expenses: [], workspace_data: {} };
     const trips = await getTrips();
     newTrip.id = 'trip-' + Date.now().toString();
     trips.push(newTrip);

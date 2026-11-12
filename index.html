@@ -3,18 +3,19 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Journey Planner</title>
+  <title>Lakbay — trip, together</title>
   <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
   <script>
     tailwind.config = { theme: { extend: { fontFamily: { sans: ['Nunito', 'sans-serif'], } } } }
   </script>
   <link rel="stylesheet" href="styles.css">
 </head>
-<body class="bg-[#f7f7f7] text-[#4b4b4b] h-screen overflow-hidden flex flex-col md:flex-row">
+<body class="app-body bg-[#f7f7f7] text-[#4b4b4b] h-screen overflow-hidden flex flex-col md:flex-row">
   
-  <aside class="w-full md:w-64 bg-white border-b md:border-b-0 md:border-r border-gray-200 p-4 flex flex-row md:flex-col justify-between items-center md:items-start shrink-0 z-20 md:h-full">
+  <aside class="sidebar w-full md:w-64 bg-white border-b md:border-b-0 md:border-r border-gray-200 p-4 flex flex-row md:flex-col justify-between items-center md:items-start shrink-0 z-20 md:h-full">
     <div class="w-full">
       <h1 class="text-2xl font-extrabold text-[#58cc02] hidden md:block mb-8 cursor-pointer" id="logo-btn">Lakbay</h1>
       <h1 class="text-2xl font-extrabold text-[#58cc02] md:hidden cursor-pointer" id="logo-btn-mobile">Lakbay</h1>
@@ -43,7 +44,7 @@
     </div>
   </aside>
 
-  <main class="flex-1 overflow-y-auto bg-[#f7f7f7] relative h-full w-full pb-24">
+  <main class="app-main flex-1 overflow-y-auto bg-[#f7f7f7] relative h-full w-full pb-24">
     
     <!-- VIEW: Trips List -->
     <div id="trips-view" class="view-section p-4 sm:p-8 max-w-2xl mx-auto">
@@ -292,7 +293,7 @@
       <input type="text" id="expense-title" placeholder="What was this for? (e.g. Dinner)" class="w-full bg-[#f7f7f7] border-2 border-[#e5e5e5] rounded-xl p-3 font-bold outline-none focus:border-[#ce82ff] mb-4">
       
       <div class="mb-4 relative">
-        <span class="absolute left-4 top-3 font-extrabold text-gray-400 text-lg">¥</span>
+        <span class="absolute left-4 top-3 font-extrabold text-gray-400 text-lg">₱</span>
         <input type="number" id="expense-amount" placeholder="0.00" class="w-full bg-[#f7f7f7] border-2 border-[#e5e5e5] rounded-xl p-3 pl-8 font-bold outline-none focus:border-[#ce82ff]">
       </div>
 
