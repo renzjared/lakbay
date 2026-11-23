@@ -1,12 +1,14 @@
 import { getTrips, getTrip, createTrip, deleteTrip, useSupabase } from './storage.js';
 import { playClick, playSuccess } from './audio.js';
 import { currentUser } from './auth.js';
-import { loadTripDays, activeDayId } from './itinerary.js';
+import { loadTripDays, activeDayId, activeTrip, isTripMember, activeUserRole } from './itinerary.js';
 import { renderNotes } from './notes.js';
 import { renderSplitter, initSplitter } from './splitter.js';
 import { renderHub } from './hub.js';
 
 let currentView = 'trips';
+let profileReturnView = 'trips';
+window.lakbayCurrentView = currentView;
 
 export async function initUI() {
   await renderTripList();
@@ -17,11 +19,24 @@ export async function initUI() {
   switchView('trips');
 }
 
-export function switchView(viewName) {
+export function switchView(viewName, options = {}) {
+  if (!options.force && viewName !== 'settings' && currentView === 'settings' && window.lakbayHasUnsavedTripSettings?.()) {
+    document.dispatchEvent(new CustomEvent('lakbay:settings-navigation-attempt', { detail: { target: viewName } }));
+    return false;
+  }
+  if (viewName === 'forum' && activeTrip && !isTripMember) {
+    window.lakbayOpenTripInvitePrompt?.(activeTrip);
+    return;
+  }
+  if (viewName === 'settings' && activeUserRole === 'viewer') return;
+  if (viewName === 'profile' && currentView !== 'profile') profileReturnView = currentView;
+  document.dispatchEvent(new CustomEvent('lakbay:view-changing', { detail: { from: currentView, to: viewName } }));
   currentView = viewName;
+  window.lakbayCurrentView = viewName;
   document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
   const viewEl = document.getElementById(`${viewName}-view`);
   if (viewEl) viewEl.classList.remove('hidden');
+  document.dispatchEvent(new CustomEvent('lakbay:view-changed', { detail: viewName }));
 
   const globalNav = document.getElementById('global-bottom-nav');
   const tripNav = document.getElementById('trip-bottom-nav');
@@ -45,9 +60,9 @@ export function switchView(viewName) {
   if (viewName === 'notes') renderNotes();
   if (viewName === 'splitter') renderSplitter();
   if (viewName === 'hub') renderHub();
-  const labels = { trips: 'Overview', days: 'Plan', day: 'Plan', splitter: 'Budget', forum: 'Forum', settings: 'Trip settings', profile: 'My profile', notes: 'Notes', hub: 'Travel guide' };
-  const crumb = document.getElementById('workspace-breadcrumb');
-  if (crumb) crumb.textContent = labels[viewName] || 'Overview';
+  const labels = { trips: 'Overview', days: 'Itinerary', day: 'Itinerary', food: 'Food', splitter: 'Budget', forum: 'Forum', settings: 'Trip settings', profile: 'My profile', notes: 'Notes', hub: 'Travel guide' };
+  document.querySelectorAll('#workspace-breadcrumb, #desktop-workspace-breadcrumb').forEach(crumb => { crumb.textContent = labels[viewName] || 'Overview'; });
+  if (viewName === 'profile') document.dispatchEvent(new Event('lakbay:profile-opened'));
   document.querySelectorAll('.global-nav-btn, .global-nav-mobile').forEach(btn => {
     const target = btn.dataset.target;
     btn.classList.toggle('nav-btn-active', target === viewName || (viewName === 'day' && target === 'days'));
@@ -55,17 +70,21 @@ export function switchView(viewName) {
   document.querySelectorAll('.trip-nav-btn').forEach(btn => btn.classList.toggle('nav-btn-active', btn.dataset.target === viewName || (viewName === 'day' && btn.dataset.target === 'days')));
 }
 
+export function returnFromProfile() {
+  switchView(profileReturnView || 'trips');
+}
+
 function setupEventListeners() {
   document.querySelectorAll('.trip-nav-btn, .global-nav-btn, .global-nav-mobile').forEach(btn => {
     btn.addEventListener('click', (e) => {
       const target = e.currentTarget.dataset.target; if (!target) return;
-      if(target === 'day' && !activeDayId) return alert("Please select a Day from the Days tab first.");
+      if(target === 'day' && !activeDayId) return alert("Select a day from Itinerary first.");
       playClick(); switchView(target);
     });
   });
 
-  document.getElementById('logo-btn').onclick = () => { playClick(); switchView('trips'); };
-  document.getElementById('logo-btn-mobile').onclick = () => { playClick(); switchView('trips'); };
+  document.getElementById('logo-btn')?.addEventListener('click', () => { playClick(); switchView('trips'); });
+  document.getElementById('logo-btn-mobile')?.addEventListener('click', () => { playClick(); switchView('trips'); });
   document.getElementById('back-to-days-btn').onclick = () => { playClick(); switchView('days'); };
 
   const modal = {
@@ -81,20 +100,57 @@ function setupEventListeners() {
   modal.closeBtn.onclick = () => { playClick(); modal.card.classList.add('translate-y-full'); setTimeout(() => modal.bg.classList.add('hidden'), 300); };
   modal.saveBtn.onclick = async () => {
     const dest = modal.dest.value.trim(); if (!dest) return alert("Please enter a destination!");
-    playSuccess();
-    const created = await createTrip(modal.emoji.value || '📍', dest);
-    if (!created) return alert('Could not create the trip. Check your connection and try again.');
-    modal.closeBtn.click();
-    await loadTripDays(created);
-    window.dispatchEvent(new Event('lakbay:trip-loaded'));
-    await renderTripList();
-    switchView('trips');
+    playClick();
+    modal.saveBtn.disabled = true;
+    modal.saveBtn.textContent = 'Creating…';
+    let created = null;
+    try {
+      created = await createTrip(modal.emoji.value || '📍', dest);
+      if (!created) throw new Error('Supabase did not return the new trip.');
+      playSuccess();
+      showToast(`Trip created · ${dest}`);
+      modal.closeBtn.click();
+      await renderTripList();
+      try {
+        await loadTripDays(created);
+        document.dispatchEvent(new Event('lakbay:trip-loaded'));
+      } catch (openError) {
+        console.error('Trip was created, but its overview could not be opened.', openError);
+        switchView('trips');
+        alert('Your trip was created and is in the trip list. Open it from there to continue.');
+        return;
+      }
+      switchView('trips');
+    } catch (error) {
+      console.error('Could not create trip.', error);
+      if (created) {
+        await renderTripList();
+        switchView('trips');
+        alert('Your trip was created, but Lakbay could not open its overview. It is available in your trip list.');
+      } else {
+        const detail = error?.message || 'Check your connection and try again.';
+        alert(`Could not create the trip. ${detail}`);
+      }
+    } finally {
+      modal.saveBtn.disabled = false;
+      modal.saveBtn.textContent = "Let's Go!";
+    }
   };
 }
 
 async function renderTripList() {
   const list = document.getElementById('trip-list');
-  const trips = await getTrips(); 
+  if (!list) return;
+  let trips;
+  try {
+    trips = await getTrips();
+  } catch (error) {
+    console.error('Could not load trips.', error);
+    list.innerHTML = `<div class="empty-trip-state" role="alert"><div class="empty-trip-icon">!</div><h3>We couldn’t load your trips.</h3><p>${escapeHtml(error?.message || 'Check your connection, then try again.')}</p><button class="outline-btn" type="button" id="retry-trip-load">Try again</button></div>`;
+    document.getElementById('retry-trip-load')?.addEventListener('click', renderTripList);
+    document.dispatchEvent(new Event('lakbay:trip-list-updated'));
+    return;
+  }
   list.innerHTML = '';
   if (useSupabase && !currentUser) {
     document.dispatchEvent(new Event('lakbay:trip-list-updated'));
@@ -121,7 +177,7 @@ async function renderTripList() {
     card.addEventListener('click', async (e) => {
       if(e.target.closest('.delete-btn')) return;
       playClick(); await loadTripDays(await getTrip(trip.id));
-      window.dispatchEvent(new Event('lakbay:trip-loaded'));
+      document.dispatchEvent(new Event('lakbay:trip-loaded'));
       switchView('trips');
     });
     list.appendChild(card);
@@ -133,3 +189,19 @@ async function renderTripList() {
 }
 
 function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+export function showToast(message) {
+  let toast = document.getElementById('app-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'app-toast';
+    toast.className = 'app-toast';
+    toast.setAttribute('role', 'status');
+    toast.setAttribute('aria-live', 'polite');
+    document.body.appendChild(toast);
+  }
+  toast.textContent = message;
+  toast.classList.add('is-visible');
+  clearTimeout(showToast.timer);
+  showToast.timer = setTimeout(() => toast.classList.remove('is-visible'), 3200);
+}

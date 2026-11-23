@@ -13,6 +13,50 @@ if (useSupabase) {
 
 const DB_KEY = 'travel_app_trips';
 
+function getLocalWorkspaceData(tripId) {
+  let workspace={};
+  try { workspace=JSON.parse(localStorage.getItem(`lakbay_${tripId}_workspace_data`) || '{}'); }
+  catch { workspace={}; }
+  // Older app builds kept some modules in per-feature keys before they were
+  // consolidated into trips.workspace_data. Preserve those values for migration.
+  for(const name of ['food','people','groups','methods','payments','forum','expenses']){
+    if(workspace[name]!==undefined)continue;
+    try{const value=localStorage.getItem(`lakbay_${tripId}_${name}`);if(value!==null)workspace[name]=JSON.parse(value)}catch{}
+  }
+  return workspace;
+}
+
+function isWorkspaceValueEmpty(value){if(value==null)return true;if(Array.isArray(value))return value.length===0||value.every(isWorkspaceValueEmpty);if(typeof value==='object')return Object.keys(value).length===0||Object.values(value).every(isWorkspaceValueEmpty);return false}
+
+async function restoreOwnerLocalWorkspace(trip, remoteWorkspace){
+  const localWorkspace=getLocalWorkspaceData(trip.id);
+  const merged={...(remoteWorkspace||{})};let changed=false;
+  for(const [name,value] of Object.entries(localWorkspace)){
+    if(isWorkspaceValueEmpty(merged[name])&&!isWorkspaceValueEmpty(value)){merged[name]=value;changed=true}
+  }
+  if(!changed)return trip;
+  try{
+    const {data:{user}}=await supabase.auth.getUser();
+    if(!user||String(user.id)!==String(trip.owner_id))return trip;
+    const {error}=await supabase.from('trips').update({workspace_data:merged}).eq('id',trip.id);
+    if(error){console.warn('Could not restore locally cached trip data to Supabase.',error);return trip}
+    trip.workspace_data=merged;
+    trip.expenses=Array.isArray(merged.expenses)?merged.expenses:(trip.expenses||[]);
+  }catch(error){console.warn('Could not restore locally cached trip data to Supabase.',error)}
+  return trip;
+}
+
+function hydrateTrip(trip) {
+  if (!trip) return trip;
+  const workspace = {
+    ...getLocalWorkspaceData(trip.id),
+    ...(trip.workspace_data && typeof trip.workspace_data === 'object' ? trip.workspace_data : {})
+  };
+  trip.workspace_data = workspace;
+  if (!Array.isArray(trip.expenses)) trip.expenses = Array.isArray(workspace.expenses) ? workspace.expenses : [];
+  return trip;
+}
+
 export function initStorage() {
   if (!useSupabase) {
     const existing = localStorage.getItem(DB_KEY);
@@ -33,7 +77,7 @@ export async function getTrips() {
     const { data: sharedData } = await supabase.from('trip_members').select('trips(*)').or(memberQuery);
     const sharedTrips = (sharedData || []).map(row => row.trips).filter(trip => trip !== null);
 
-    const allTrips = [...(ownedTrips || []), ...sharedTrips];
+    const allTrips = [...(ownedTrips || []), ...sharedTrips].map(hydrateTrip);
     return Array.from(new Map(allTrips.map(item => [item.id, item])).values()).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   } else {
     const data = localStorage.getItem(DB_KEY);
@@ -43,40 +87,89 @@ export async function getTrips() {
 
 export async function getTrip(id) {
   if (useSupabase) {
-    const { data } = await supabase.from('trips').select('*').eq('id', id).single();
-    return data;
+    const { data, error } = await supabase.from('trips').select('*').eq('id', id).single();
+    if (error) throw error;
+    const trip=hydrateTrip(data);
+    await restoreOwnerLocalWorkspace(trip,data.workspace_data||{});
+    return trip;
   }
   const trips = await getTrips();
   return trips.find(t => t.id === id);
 }
 
+export async function getTripLinkPreview(code) {
+  if (useSupabase) {
+    const { data, error } = await supabase.rpc('get_trip_link_preview', { p_code: String(code || '') });
+    if (error) throw error;
+    return data;
+  }
+  const trip = await getTrip(code);
+  if (!trip) return null;
+  return {
+    id: trip.id,
+    invite_code: trip.invite_code || String(trip.id),
+    destination: trip.destination,
+    emoji: trip.emoji,
+    owner_name: trip.owner_name || 'Trip organizer',
+    visibility: trip.visibility || 'private',
+    start_date: trip.workspace_data?.start_date || null,
+    end_date: trip.workspace_data?.end_date || null,
+    day_count: trip.days?.length || 0
+  };
+}
+
+export async function getPublicTripView(code) {
+  if (useSupabase) {
+    const { data, error } = await supabase.rpc('get_public_trip_view', { p_code: String(code || '') });
+    if (error) throw error;
+    if(data&&(!Number.isFinite(Number(data.public_view_version))||Number(data.public_view_version)<2))throw new Error('Public trip preview data is outdated. Run the latest supabase-overhaul.sql migration, then reload this invite.');
+    if(data?.workspace_data){data.expenses=Array.isArray(data.workspace_data.expenses)?data.workspace_data.expenses:[];data.days=Array.isArray(data.days)?data.days:[];data.public_members=Array.isArray(data.members)?data.members:[];}
+    return data;
+  }
+  const trip = await getTrip(code);
+  if (!trip || !['public_view', 'public_edit'].includes(trip.visibility)) return null;
+  return {
+    id: trip.id,
+    destination: trip.destination,
+    emoji: trip.emoji,
+    owner_id: trip.owner_id,
+    visibility: trip.visibility,
+    days: trip.days || [],
+    workspace_data: { ...trip.workspace_data, start_date: trip.workspace_data?.start_date || null, end_date: trip.workspace_data?.end_date || null }
+  };
+}
+
 export async function updateTrip(updatedTrip) {
   if (useSupabase) {
+    const workspaceData = {
+      ...(updatedTrip.workspace_data || getLocalWorkspaceData(updatedTrip.id)),
+      expenses: Array.isArray(updatedTrip.expenses) ? updatedTrip.expenses : []
+    };
     const values = {
       emoji: updatedTrip.emoji,
       destination: updatedTrip.destination,
       days: updatedTrip.days,
       notes: updatedTrip.notes,
-      expenses: updatedTrip.expenses, // Ensure expenses are saved
-      visibility: updatedTrip.visibility
+      visibility: updatedTrip.visibility,
+      workspace_data: workspaceData
     };
-    if (updatedTrip.workspace_data !== undefined) values.workspace_data = updatedTrip.workspace_data;
+    const { workspace_data, ...legacyValues } = values;
     let { error } = await supabase.from('trips').update(values).eq('id', updatedTrip.id);
 
-    // Keep core trip actions working on existing databases before the optional
-    // workspace_data migration is applied. New workspace data is cached locally.
-    if (error && updatedTrip.workspace_data !== undefined && /workspace_data/i.test(error.message || '')) {
-      const { workspace_data, ...legacyValues } = values;
+    // Keep older databases usable if the workspace_data migration has not been applied.
+    if (error && /workspace_data/i.test(error.message || '')) {
       const retry = await supabase.from('trips').update(legacyValues).eq('id', updatedTrip.id);
       error = retry.error;
-      if (!error) localStorage.setItem(`lakbay_${updatedTrip.id}_workspace_data`, JSON.stringify(updatedTrip.workspace_data));
+      if (!error) localStorage.setItem(`lakbay_${updatedTrip.id}_workspace_data`, JSON.stringify(workspace_data));
     }
     
     if (error) {
-      alert("Action denied: You don't have permission to edit this.");
-      window.location.reload(); 
+      console.error('Could not save trip.', error);
+      alert(`Could not save this trip. ${error.message || 'Please try again.'}`);
       return false;
     }
+    updatedTrip.workspace_data = workspaceData;
+    updatedTrip.expenses = workspaceData.expenses;
     return true;
   } else {
     const trips = await getTrips();
@@ -91,15 +184,24 @@ export async function updateTrip(updatedTrip) {
 
 export async function createTrip(emoji, destination) {
   if (useSupabase) {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return null;
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError) throw userError;
+    if (!user) throw new Error('Please sign in with Discord before creating a trip.');
     const newTrip = { 
-      emoji: emoji || '📍', destination, days: [], notes: [], expenses: [],
+      emoji: emoji || '📍', destination, days: [], notes: [], workspace_data: { expenses: [] },
       owner_id: user.id, visibility: 'private'
     };
-    const { data } = await supabase.from('trips').insert([newTrip]).select();
-    if (data?.[0]) data[0].workspace_data ||= {};
-    return data ? data[0] : null;
+    let { data, error } = await supabase.from('trips').insert(newTrip).select('*').single();
+    if (error && /workspace_data/i.test(error.message || '')) {
+      const { workspace_data, ...legacyTrip } = newTrip;
+      const retry = await supabase.from('trips').insert(legacyTrip).select('*').single();
+      data = retry.data;
+      error = retry.error;
+      if (data) localStorage.setItem(`lakbay_${data.id}_workspace_data`, JSON.stringify(workspace_data));
+    }
+    if (error) throw new Error(error.message || 'Supabase could not create the trip.');
+    if (!data) throw new Error('Supabase did not return the created trip.');
+    return hydrateTrip(data);
   } else {
     const newTrip = { emoji: emoji || '📍', destination, days: [], notes: [], expenses: [], workspace_data: {} };
     const trips = await getTrips();

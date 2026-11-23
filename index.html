@@ -4,29 +4,41 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Lakbay — trip, together</title>
-  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
-  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;600;700;800;900&family=Nunito+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
-  <script>
-    tailwind.config = { theme: { extend: { fontFamily: { sans: ['Nunito', 'sans-serif'], } } } }
-  </script>
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="utilities.css">
+  <link rel="stylesheet" href="theme.css">
 </head>
 <body class="app-body bg-[#f7f7f7] text-[#4b4b4b] h-screen overflow-hidden flex flex-col md:flex-row">
   
   <aside class="sidebar w-full md:w-64 bg-white border-b md:border-b-0 md:border-r border-gray-200 p-4 flex flex-row md:flex-col justify-between items-center md:items-start shrink-0 z-20 md:h-full">
-    <div class="w-full">
-      <h1 class="text-2xl font-extrabold text-[#58cc02] hidden md:block mb-8 cursor-pointer" id="logo-btn">Lakbay</h1>
-      <h1 class="text-2xl font-extrabold text-[#58cc02] md:hidden cursor-pointer" id="logo-btn-mobile">Lakbay</h1>
+    <div class="sidebar-upper">
+      <div class="trip-rail" aria-label="Trip servers">
+        <div class="trip-server-list" id="trip-server-list" aria-label="Your trips"></div>
+        <button type="button" class="trip-server-add" id="trip-server-add" aria-label="Create a trip" title="Create a trip">＋</button>
+      </div>
+      <div class="sidebar-content">
+
+        <div class="desktop-trip-switcher-wrap trip-switcher-wrap">
+          <button id="desktop-workspace-trip-switcher" class="workspace-trip-switcher" type="button" aria-haspopup="true" aria-expanded="false"><span class="trip-avatar" id="desktop-workspace-trip-avatar">＋</span><span class="trip-switcher-copy"><strong id="desktop-workspace-trip-title">Select a trip</strong><small id="desktop-workspace-breadcrumb">Choose a trip to continue</small></span><span class="switch-chevron">⌄</span></button>
+          <div id="desktop-trip-switcher-menu" class="trip-switcher-menu hidden"><div id="desktop-trip-switcher-options"></div><button class="trip-switcher-create workspace-trip-create" type="button">＋ Create a trip</button></div>
+        </div>
       
       <div class="hidden md:flex flex-col gap-2 w-full mt-2 md:mt-0" id="desktop-global-nav">
-        <button data-target="trips" class="global-nav-btn nav-btn-active bg-[#e5f7ff] text-[#1cb0f6] w-full py-3 px-4 rounded-xl font-bold text-sm uppercase flex items-center gap-3 transition-colors">
-          <span class="text-xl">🏠</span> Trips
+        <button data-target="trips" class="global-nav-btn nav-btn-active">
+          <span class="nav-icon">◫</span><span>Overview</span>
         </button>
-        <button class="global-nav-btn text-gray-400 hover:bg-gray-100 w-full py-3 px-4 rounded-xl font-bold text-sm uppercase flex items-center gap-3 transition-colors">
-          <span class="text-xl">👥</span> Friends
+        <button data-target="days" class="global-nav-btn">
+          <span class="nav-icon">⌖</span><span>Itinerary</span>
         </button>
+        <button data-target="food" class="global-nav-btn"><span class="nav-icon">♨</span><span>Food</span></button>
+        <button data-target="splitter" class="global-nav-btn"><span class="nav-icon">₱</span><span>Budget</span></button>
+        <button data-target="forum" class="global-nav-btn"><span class="nav-icon">☷</span><span>Forum</span></button>
+        <div class="nav-divider"></div>
+        <button data-target="settings" class="global-nav-btn secondary-nav"><span class="nav-icon">⚙</span><span>Trip settings</span></button>
+        </div>
       </div>
     </div>
     
@@ -34,12 +46,21 @@
       <button id="login-discord-btn" class="w-full bg-[#5865F2] text-white py-3 px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-[#4752C4] transition-colors shadow-sm">
         <span>Discord Login</span>
       </button>
-      <div id="user-profile-display" class="hidden items-center justify-between p-2 rounded-xl bg-gray-50 border-2 border-gray-100">
-        <div class="flex items-center gap-2 truncate">
-          <img id="user-avatar" src="" class="w-8 h-8 rounded-full bg-gray-200">
-          <span id="user-name" class="font-bold text-sm text-gray-600 truncate"></span>
+      <div class="account-footer">
+        <div id="user-profile-display" class="account-menu-wrap hidden">
+          <button type="button" id="account-menu-trigger" class="account-trigger" aria-haspopup="true" aria-expanded="false">
+            <img id="user-avatar" src="" alt="" class="w-8 h-8 rounded-full bg-gray-200">
+            <span id="user-name" class="font-bold text-sm text-gray-600 truncate"></span><span aria-hidden="true">⌄</span>
+          </button>
+          <div id="account-menu" class="account-menu hidden" role="menu">
+            <button type="button" data-target="profile" role="menuitem">☺　Profile settings</button>
+            <button type="button" id="logout-btn" role="menuitem">↪　Sign out</button>
+          </div>
         </div>
-        <button id="logout-btn" class="text-xs text-red-400 font-bold hover:text-red-600 px-2 py-1 rounded hover:bg-red-50 transition-colors">Exit</button>
+        <div class="account-utilities">
+          <button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch to dark mode" aria-pressed="false">☾</button>
+          <button class="top-icon" id="top-settings-btn" data-target="settings" aria-label="Trip settings">⚙</button>
+        </div>
       </div>
     </div>
   </aside>
@@ -47,7 +68,7 @@
   <main class="app-main flex-1 overflow-y-auto bg-[#f7f7f7] relative h-full w-full pb-24">
     
     <!-- VIEW: Trips List -->
-    <div id="trips-view" class="view-section p-4 sm:p-8 max-w-2xl mx-auto">
+    <div id="trips-view" class="view-section view-dashboard p-4 sm:p-8 mx-auto">
       <div class="flex justify-between items-center mb-6">
         <h2 class="text-2xl font-extrabold text-[#4b4b4b]">Upcoming Adventures</h2>
         <button id="add-trip-btn" class="bg-[#58cc02] text-white px-4 py-2 rounded-xl font-bold uppercase hover:bg-[#58a700] transition-colors shadow-sm active:translate-y-1">+ New</button>
@@ -56,28 +77,24 @@
     </div>
 
     <!-- VIEW: Days -->
-    <div id="days-view" class="view-section hidden p-4 sm:p-8 max-w-2xl mx-auto">
-      <div class="flex justify-between items-center mb-6">
-        <h2 id="days-trip-title" class="text-2xl font-extrabold text-[#4b4b4b]">Itinerary</h2>
-        <div class="flex gap-2">
-          <button id="share-trip-btn" class="bg-[#e5f7ff] text-[#1cb0f6] px-4 py-2 rounded-xl font-bold uppercase hover:bg-[#cbeeff] transition-colors shadow-sm">Share</button>
-          <button id="add-day-btn" class="bg-[#1cb0f6] text-white px-4 py-2 rounded-xl font-bold uppercase hover:bg-[#1899d6] transition-colors shadow-sm">+ Add Day</button>
-        </div>
-      </div>
-      <div id="days-list" class="space-y-4"></div>
+    <div id="days-view" class="view-section itinerary-page hidden">
+      <header class="plan-page-head"><div><h1>Itinerary</h1><p id="days-trip-title">Build and review the trip schedule.</p></div><div class="plan-page-actions"><button id="share-trip-btn" class="light-button">Share trip</button><button id="add-day-btn" class="action-button">＋ Add day</button></div></header>
+      <div class="itinerary-workspace"><aside class="day-selector-panel"><div class="panel-heading"><h2>Days</h2><span id="itinerary-day-count">0</span></div><div id="days-list" class="days-list"></div></aside><section class="day-preview-panel"><div class="day-preview-heading"><div><h2 id="preview-day-title">Select a day</h2><p id="preview-day-date">Choose a day to view its route.</p></div><button type="button" id="edit-preview-day" class="light-button hidden">Edit day</button></div><div id="itinerary-map" class="itinerary-map"><div class="map-empty-state">Select a day to preview its stops and route.</div></div><div class="day-stops-heading"><h3>Stops in order</h3><button type="button" id="preview-add-activity" class="light-button hidden">＋ Add stop</button></div><div id="day-stops-preview" class="day-stops-preview"></div></section></div>
     </div>
 
     <!-- VIEW: Day Editor -->
-    <div id="day-view" class="view-section hidden p-4 sm:p-8 max-w-2xl mx-auto">
-      <div class="flex items-center justify-between mb-6">
-        <div class="flex items-center gap-4">
-          <button id="back-to-days-btn" class="text-[#afafaf] hover:text-[#1cb0f6] font-extrabold text-xl transition-colors">←</button>
-          <h2 id="day-title" class="text-2xl font-extrabold text-[#4b4b4b]">Day Editor</h2>
+    <div id="day-view" class="view-section day-editor-page hidden">
+      <div class="day-editor-head">
+        <div class="day-editor-title-wrap">
+          <button id="back-to-days-btn" class="day-editor-back" aria-label="Back to itinerary">←</button>
+          <h1 id="day-title">Day editor</h1>
         </div>
-        <button id="add-activity-btn" class="text-[#1cb0f6] bg-[#ddf4ff] px-4 py-2 rounded-xl font-bold uppercase text-sm hover:bg-[#cbeeff] transition-colors shadow-sm">+ Activity</button>
+        <button id="add-activity-btn" class="action-button day-editor-add">＋ Add stop</button>
       </div>
       <div id="itinerary-container"></div>
     </div>
+
+    <section id="food-view" class="view-section food-page hidden"></section>
 
     <!-- VIEW: Notes -->
     <div id="notes-view" class="view-section hidden p-4 sm:p-8 max-w-2xl mx-auto">
@@ -170,55 +187,51 @@
     </div>
   </div>
 
-  <div id="day-backdrop" class="fixed inset-0 bg-black bg-opacity-40 hidden flex items-end sm:items-center justify-center z-50">
-    <div id="day-modal" class="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 transform translate-y-full transition-transform duration-300 shadow-2xl">
-      <h2 class="text-2xl font-bold mb-4 text-[#4b4b4b]">Add a Day</h2>
-      <label class="text-xs font-bold text-gray-400 uppercase tracking-wider pl-2">Date</label>
-      <input type="date" id="day-date-input" class="w-full bg-[#f7f7f7] border-2 border-[#e5e5e5] rounded-xl p-3 font-bold outline-none focus:border-[#1cb0f6] text-gray-600 mb-4">
-      <label class="text-xs font-bold text-gray-400 uppercase tracking-wider pl-2">Title (Optional)</label>
-      <input type="text" id="day-title-input" placeholder="e.g. Shopping District" class="w-full bg-[#f7f7f7] border-2 border-[#e5e5e5] rounded-xl p-4 text-lg font-bold outline-none focus:border-[#1cb0f6] mb-6">
-      <button id="save-day-btn" class="duo-btn duo-btn-secondary w-full text-lg py-3 rounded-2xl font-bold uppercase tracking-wide">Save Day</button>
-      <button id="close-day-btn" class="mt-4 w-full text-center text-gray-400 font-bold uppercase tracking-wide py-2 active:scale-95 transition-transform">Cancel</button>
-    </div>
+  <div id="day-backdrop" class="lakbay-modal-backdrop hidden" data-close-modal>
+    <form id="day-modal" class="lakbay-modal plan-dialog" role="dialog" aria-modal="true" aria-labelledby="day-modal-title">
+      <button type="button" id="close-day-btn" class="modal-x" aria-label="Close">×</button>
+      <h2 id="day-modal-title">Add a day</h2><p>Add a date to the trip itinerary.</p>
+      <label>Date<input type="date" id="day-date-input" required></label>
+      <label>Day name <span class="optional-label">Optional</span><input type="text" id="day-title-input" placeholder="e.g. Shopping District" maxlength="100"></label>
+      <div class="modal-actions"><button type="button" id="cancel-day-btn" class="light-button">Cancel</button><button id="save-day-btn" class="action-button" type="submit">Save day</button></div>
+    </form>
   </div>
 
-  <div id="activity-backdrop" class="fixed inset-0 bg-black bg-opacity-40 hidden flex items-end sm:items-center justify-center z-50">
-    <div id="activity-modal" class="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 transform translate-y-full transition-transform duration-300 shadow-2xl overflow-y-auto max-h-[90vh]">
-      <div class="flex justify-between items-center mb-4">
-        <h2 id="activity-modal-title" class="text-2xl font-bold text-[#4b4b4b]">Add Activity</h2>
-        <button id="delete-act-btn" class="text-red-500 font-bold hidden px-3 py-1 bg-red-50 rounded-lg hover:bg-red-100">Delete</button>
-      </div>
+  <div id="activity-backdrop" class="lakbay-modal-backdrop hidden" data-close-modal>
+    <div id="activity-modal" class="lakbay-modal activity-dialog" role="dialog" aria-modal="true" aria-labelledby="activity-modal-title">
+      <button type="button" class="modal-x" id="close-act-x" aria-label="Close">×</button>
+      <div class="activity-dialog-head"><div><h2 id="activity-modal-title">Add a stop</h2><p>Add a place or a transit segment to the day.</p></div><button type="button" id="delete-act-btn" class="expense-delete-button hidden">Delete</button></div>
       
-      <div class="flex bg-[#f7f7f7] p-1 rounded-xl mb-4 border-2 border-[#e5e5e5]">
-        <button id="type-dest-btn" class="flex-1 py-2 font-bold rounded-lg bg-white shadow-sm text-[#1cb0f6] transition-all">📍 Place</button>
-        <button id="type-transit-btn" class="flex-1 py-2 font-bold rounded-lg text-gray-400 transition-all">🚌 Transit</button>
+      <div class="activity-type-switch">
+        <button type="button" id="type-dest-btn" class="active">📍 Place</button>
+        <button type="button" id="type-transit-btn">🚌 Transit</button>
       </div>
       <input type="hidden" id="act-type-val" value="destination">
       
-      <div id="transit-modes" class="hidden grid grid-cols-6 gap-2 mb-4">
-        <button class="transit-mode-btn bg-[#f7f7f7] rounded-xl py-2 text-xl border-2 border-transparent hover:border-[#e5e5e5]" data-mode="car">🚗</button>
-        <button class="transit-mode-btn bg-[#f7f7f7] rounded-xl py-2 text-xl border-2 border-transparent hover:border-[#e5e5e5]" data-mode="bus">🚌</button>
-        <button class="transit-mode-btn bg-[#f7f7f7] rounded-xl py-2 text-xl border-2 border-transparent hover:border-[#e5e5e5]" data-mode="train">🚆</button>
-        <button class="transit-mode-btn bg-[#f7f7f7] rounded-xl py-2 text-xl border-2 border-transparent hover:border-[#e5e5e5]" data-mode="plane">✈️</button>
-        <button class="transit-mode-btn bg-[#f7f7f7] rounded-xl py-2 text-xl border-2 border-transparent hover:border-[#e5e5e5]" data-mode="bike">🚲</button>
-        <button class="transit-mode-btn bg-[#f7f7f7] rounded-xl py-2 text-xl border-2 border-transparent hover:border-[#e5e5e5]" data-mode="walk">🚶</button>
+      <div id="transit-modes" class="transit-modes hidden">
+        <button type="button" class="transit-mode-btn" data-mode="car" aria-label="Car">🚗</button>
+        <button type="button" class="transit-mode-btn" data-mode="bus" aria-label="Bus">🚌</button>
+        <button type="button" class="transit-mode-btn" data-mode="train" aria-label="Train">🚆</button>
+        <button type="button" class="transit-mode-btn" data-mode="plane" aria-label="Plane">✈️</button>
+        <button type="button" class="transit-mode-btn" data-mode="bike" aria-label="Bicycle">🚲</button>
+        <button type="button" class="transit-mode-btn" data-mode="walk" aria-label="Walk">🚶</button>
       </div>
       <input type="hidden" id="act-transit-val" value="bus">
-      
-      <input type="text" id="act-title" placeholder="e.g. Fushimi Inari" class="w-full bg-[#f7f7f7] border-2 border-[#e5e5e5] rounded-xl p-4 text-lg font-bold outline-none focus:border-[#1cb0f6] mb-4">
-      
-      <div class="flex gap-4 mb-4">
-        <div class="flex-1">
-          <label class="text-xs font-bold text-gray-400 uppercase tracking-wider pl-2">Start Time</label>
-          <input type="time" id="act-start" class="w-full bg-[#f7f7f7] border-2 border-[#e5e5e5] rounded-xl p-3 font-bold outline-none focus:border-[#1cb0f6] text-gray-600">
-        </div>
-        <div class="flex-1">
-          <label class="text-xs font-bold text-gray-400 uppercase tracking-wider pl-2">Duration (min)</label>
-          <input type="number" id="act-duration" value="60" class="w-full bg-[#f7f7f7] border-2 border-[#e5e5e5] rounded-xl p-3 font-bold outline-none focus:border-[#1cb0f6] text-gray-600">
-        </div>
+      <label class="plan-field-label" for="act-title">Name<input type="text" id="act-title" placeholder="e.g. Fushimi Inari" maxlength="140"></label>
+      <div id="destination-pin-fields" class="destination-pin-fields">
+        <label class="plan-field-label" for="act-location">Map pin</label>
+        <div class="map-search-row"><input type="search" id="act-location" placeholder="Search a place or address" autocomplete="off"><button type="button" id="act-location-search" class="light-button">Search</button></div>
+        <p class="map-search-help">Place searches are sent to OpenStreetMap’s public geocoder.</p>
+        <div id="act-location-results" class="map-search-results" role="listbox"></div>
+        <button type="button" id="act-location-clear" class="text-link hidden">Remove map pin</button>
       </div>
-      <button id="save-act-btn" class="duo-btn duo-btn-primary w-full text-lg py-3 rounded-2xl font-bold uppercase tracking-wide">Save Activity</button>
-      <button id="close-act-btn" class="mt-4 w-full text-center text-gray-400 font-bold uppercase tracking-wide py-2">Cancel</button>
+      
+      <div class="two-fields activity-time-fields">
+        <label>Start time<input type="time" id="act-start"></label>
+        <label>Duration in minutes<input type="number" id="act-duration" min="1" max="1440" value="60"></label>
+      </div>
+      <div id="cost-container"><label class="plan-field-label" for="act-cost">Estimated cost <span class="optional-label">Optional · PHP</span><input type="number" id="act-cost" min="0" step="0.01" placeholder="0.00"></label></div>
+      <div class="modal-actions"><button type="button" id="close-act-btn" class="light-button">Cancel</button><button type="button" id="save-act-btn" class="action-button">Save stop</button></div>
     </div>
   </div>
 
@@ -235,9 +248,10 @@
     </div>
   </div>
 
-  <div id="share-backdrop" class="fixed inset-0 bg-black bg-opacity-40 hidden flex items-center justify-center z-50">
-    <div id="share-modal" class="bg-white w-full max-w-lg rounded-3xl p-6 transform shadow-2xl flex flex-col max-h-[90vh]">
-      <h2 class="text-2xl font-bold mb-4 text-[#4b4b4b]">Share Trip</h2>
+  <div id="share-backdrop" class="lakbay-modal-backdrop hidden" data-close-modal>
+    <div id="share-modal" class="lakbay-modal share-dialog" role="dialog" aria-modal="true" aria-labelledby="share-modal-title">
+      <button type="button" class="modal-x" id="share-modal-x" aria-label="Close">×</button>
+      <h2 id="share-modal-title">Share trip</h2><p>Invite trip members and choose who can view the itinerary.</p>
       <div class="mb-2">
         <div class="flex gap-2">
           <input type="text" id="invite-username" placeholder="Add by Discord username..." class="flex-1 bg-[#f7f7f7] border-2 border-[#e5e5e5] rounded-xl p-3 font-bold outline-none focus:border-[#1cb0f6]">
@@ -249,9 +263,9 @@
         </div>
         <p id="invite-warning" class="text-xs text-amber-500 font-bold mt-2 hidden">⚠️ User hasn't joined Lakbay yet, but they will be added once they log in!</p>
       </div>
-      <h3 class="font-bold text-gray-400 uppercase text-xs tracking-wider mb-2 mt-4">People with access</h3>
+      <h3 class="share-section-title">People with access</h3>
       <div id="collaborators-list" class="space-y-2 overflow-y-auto mb-6 flex-1 min-h-[100px]"></div>
-      <h3 class="font-bold text-gray-400 uppercase text-xs tracking-wider mb-2">General access</h3>
+      <h3 class="share-section-title">General access</h3>
       <div class="bg-gray-50 rounded-xl p-3 flex gap-3 items-center border-2 border-gray-100 mb-6">
         <div id="ga-icon" class="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-xl shrink-0">🔒</div>
         <div class="flex-1">
@@ -273,44 +287,37 @@
   <div id="invite-popup-backdrop" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center z-[60]">
     <div class="bg-white w-full max-w-sm rounded-3xl p-6 text-center shadow-2xl transform scale-95 transition-transform duration-300" id="invite-popup-card">
       <div class="text-5xl mb-4">💌</div>
-      <h2 class="text-xl font-extrabold text-[#4b4b4b] mb-2" id="invite-popup-message">Someone invited you!</h2>
-      <p class="text-sm text-gray-500 font-bold mb-6">Do you want to join this adventure?</p>
-      <div class="flex gap-3">
-        <button id="decline-invite-btn" class="flex-1 py-3 rounded-xl font-bold text-gray-400 bg-gray-100 hover:bg-gray-200">Decline</button>
-        <button id="accept-invite-btn" class="flex-1 py-3 rounded-xl font-bold text-white bg-[#58cc02] duo-btn-primary">Join Trip</button>
+      <h2 class="text-xl font-extrabold text-[#4b4b4b] mb-2" id="invite-popup-message">Join this trip?</h2>
+      <p id="invite-popup-owner" class="text-sm text-gray-500 font-bold mb-4"></p>
+      <div id="invite-trip-details" class="invite-trip-details"></div>
+      <p id="invite-popup-hint" class="text-sm text-gray-500 font-bold my-5">Would you like to join this trip?</p>
+      <div class="invite-popup-actions">
+        <button id="decline-invite-btn" class="light-button">Not now</button>
+        <button id="view-public-trip-btn" class="outline-btn hidden">View trip</button>
+        <button id="accept-invite-btn" class="action-button">Join trip</button>
       </div>
     </div>
   </div>
 
   <!-- Add Expense Modal -->
-  <div id="expense-backdrop" class="fixed inset-0 bg-black bg-opacity-40 hidden flex items-end sm:items-center justify-center z-50">
-    <div id="expense-modal" class="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 transform translate-y-full transition-transform duration-300 shadow-2xl h-[80vh] flex flex-col">
-      <div class="flex justify-between items-center mb-4">
-        <h2 class="text-2xl font-bold text-[#4b4b4b]">Add Expense</h2>
-        <button id="delete-expense-btn" class="text-red-500 font-bold hidden px-3 py-1 bg-red-50 rounded-lg hover:bg-red-100">Delete</button>
+  <div id="expense-backdrop" class="lakbay-modal-backdrop hidden" data-close-modal>
+    <div id="expense-modal" class="lakbay-modal expense-entry-modal transform translate-y-full transition-transform duration-300" role="dialog" aria-modal="true" aria-labelledby="expense-modal-title">
+      <div class="expense-modal-head">
+        <h2 id="expense-modal-title">Add expense</h2>
+        <div class="expense-modal-head-actions">
+          <button id="delete-expense-btn" class="hidden expense-delete-button" type="button">Delete</button>
+          <button id="close-expense-btn" class="modal-x" type="button" aria-label="Close">×</button>
+        </div>
       </div>
-      
-      <input type="text" id="expense-title" placeholder="What was this for? (e.g. Dinner)" class="w-full bg-[#f7f7f7] border-2 border-[#e5e5e5] rounded-xl p-3 font-bold outline-none focus:border-[#ce82ff] mb-4">
-      
-      <div class="mb-4 relative">
-        <span class="absolute left-4 top-3 font-extrabold text-gray-400 text-lg">₱</span>
-        <input type="number" id="expense-amount" placeholder="0.00" class="w-full bg-[#f7f7f7] border-2 border-[#e5e5e5] rounded-xl p-3 pl-8 font-bold outline-none focus:border-[#ce82ff]">
-      </div>
-
-      <label class="text-xs font-bold text-gray-400 uppercase tracking-wider pl-2 mb-1 block">Who Paid?</label>
-      <select id="expense-payer" class="w-full bg-[#f7f7f7] border-2 border-[#e5e5e5] rounded-xl p-3 font-bold outline-none focus:border-[#ce82ff] mb-4 text-[#4b4b4b]">
-        <!-- Injected via JS -->
-      </select>
-
-      <label class="text-xs font-bold text-gray-400 uppercase tracking-wider pl-2 mb-1 block">Split Between (Equal Shares)</label>
-      <div id="expense-split-list" class="bg-gray-50 border-2 border-[#e5e5e5] rounded-xl p-3 mb-6 space-y-2 max-h-32 overflow-y-auto">
-        <!-- Checkboxes injected via JS -->
-      </div>
-      
-      <div class="mt-auto">
-        <button id="save-expense-btn" class="duo-btn bg-[#ce82ff] text-white border-[#b861ec] shadow-[0_6px_0_0_#b861ec] active:shadow-[0_0px_0_0_#b861ec] w-full text-lg py-3 rounded-2xl font-bold uppercase tracking-wide">Save Expense</button>
-        <button id="close-expense-btn" class="mt-4 w-full text-center text-gray-400 font-bold uppercase py-2">Cancel</button>
-      </div>
+      <label class="expense-field-label" for="expense-title">Expense name</label>
+      <input type="text" id="expense-title" placeholder="e.g. Dinner" autocomplete="off">
+      <label class="expense-field-label" for="expense-amount">Amount</label>
+      <div class="expense-amount-field"><span>₱</span><input type="number" id="expense-amount" min="0.01" step="0.01" placeholder="0.00"></div>
+      <label class="expense-field-label" for="expense-payer">Paid by</label>
+      <select id="expense-payer"><!-- Injected via JS --></select>
+      <div class="expense-split-heading"><span>Split between <small>Equal shares</small></span><div class="expense-split-actions"><button type="button" id="expense-select-all" class="light-button">Add all</button><button type="button" id="expense-clear-all" class="light-button">Remove all</button></div></div>
+      <div id="expense-split-list" class="expense-split-list"><!-- Checkboxes injected via JS --></div>
+      <div class="expense-modal-footer"><button id="save-expense-btn" class="action-button" type="button">Save expense</button></div>
     </div>
   </div>
 

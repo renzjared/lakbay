@@ -17,9 +17,11 @@ export function initShareUI() {
     updateGeneralAccessUI(DOM.visibility.value);
     await loadCollaborators();
     DOM.bg.classList.remove('hidden');
+    DOM.inviteInput.focus();
   };
 
   DOM.closeBtn.onclick = () => { DOM.bg.classList.add('hidden'); DOM.warning.classList.add('hidden'); };
+  document.getElementById('share-modal-x')?.addEventListener('click', () => DOM.closeBtn.click());
   
   DOM.visibility.onchange = async (e) => {
     if (!currentUser || activeTrip.owner_id !== currentUser.id) {
@@ -66,7 +68,7 @@ export function initShareUI() {
 
 function updateGeneralAccessUI(val) {
   if (val === 'private') { DOM.gaIcon.textContent = '🔒'; DOM.gaDesc.textContent = 'Only added people can access'; } 
-  else { DOM.gaIcon.textContent = '🌐'; DOM.gaDesc.textContent = val === 'public_edit' ? 'Anyone with the link can edit (login required)' : 'Anyone with the link can view'; }
+  else { DOM.gaIcon.textContent = '🌐'; DOM.gaDesc.textContent = val === 'public_edit' ? 'Anyone with the link can join as an editor' : 'Anyone with the link can view; joining unlocks the forum'; }
 }
 
 async function loadCollaborators() {

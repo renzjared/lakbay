@@ -12,5 +12,5 @@ export function strToMinutes(timeStr) {
 
 export function formatCurrency(amount) {
   if (amount === undefined || amount === null) return '';
-  return `¥${amount.toLocaleString()}`; 
+  return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(amount) || 0);
 }
