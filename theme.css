@@ -1658,6 +1658,7 @@ h3 {
 @media(max-width:480px){.day-editor-head{gap:10px}.day-editor-title-wrap h1{font-size:23px}.day-editor-back{width:39px;height:39px}.day-editor-add{min-height:40px;padding:8px 10px;font-size:12px}.destination-card{gap:10px;padding:12px 10px}.activity-time-column{width:68px;padding-right:8px}.activity-time{font-size:12px}.activity-duration{padding:4px 5px;font-size:10px}.activity-copy h2{font-size:15px}.destination-location{font-size:12px}.activity-drag-handle{width:27px;height:32px;font-size:18px}.transit-card{padding-inline:7px}.transit-inner{gap:9px;padding-inline:10px}.transit-copy{align-items:flex-start;flex-direction:column;gap:1px}.activity-cost{font-size:12px}}
 
 /* Mobile navigation: trip rail, channel list, then full-screen view. */
+#mobile-channel-list, #mobile-trip-browser { display:none; }
 @media (max-width: 760px) {
   html, body.app-body { width:100%; height:100%; min-height:100%; overflow:hidden !important; }
   body.app-body { display:block !important; position:relative; background:var(--page,#f7f8f6); }
@@ -1719,7 +1720,7 @@ h3 {
   .sidebar.no-active-trip #desktop-global-nav,
   .sidebar.no-active-trip #mobile-channel-list { display:none !important; }
   .mobile-trip-browser { display:none; }
-  .sidebar.no-active-trip .mobile-trip-browser { display:flex; flex-direction:column; flex:1 1 auto; min-height:0; width:100%; }
+  .sidebar.no-active-trip #mobile-trip-browser { display:flex; flex-direction:column; flex:1 1 auto; min-height:0; width:100%; }
   .mobile-trip-browser h1 { margin:5px 0 17px; color:var(--ink,#35483a); font:900 27px/1.15 Nunito,sans-serif; letter-spacing:-.6px; }
   .mobile-trip-search { display:flex; align-items:center; gap:10px; width:100%; min-height:48px; margin:0 0 15px; padding:0 13px; border:1px solid var(--line); border-radius:13px; background:var(--input-bg,#fafbf9); color:var(--muted); }
   .mobile-trip-search>span { font-size:22px; line-height:1; }
@@ -1775,7 +1776,6 @@ h3 {
 .theme-dark .sidebar, .theme-dark .sidebar-content, .theme-dark #auth-container { background:#202722; }
 .theme-dark .trip-rail { background:#1b211d !important; }
 .theme-dark .app-main, .theme-dark.app-body { background:#171d19; }
-#mobile-channel-list { display:none; }
 .food-mobile-tabs { display:none; }
 @media (max-width: 760px) {
   #food-view .food-mobile-tabs {
