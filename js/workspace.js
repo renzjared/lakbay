@@ -52,9 +52,11 @@ export function initWorkspace() {
     if(logPayment){e.preventDefault();closeModal('my-pay-modal');void openRecordPayment(null,{toId:logPayment.dataset.logMyPayment,amount:Number(logPayment.dataset.amount)});return}
     const nav = e.target.closest('[data-target]');
     if (nav && ['forum','settings','profile','trips','days','day','food','splitter'].includes(nav.dataset.target)) {
+      if (nav.closest('#mobile-channel-list')) return;
       e.preventDefault();
       if (!activeTrip && !['trips', 'profile'].includes(nav.dataset.target)) return;
       switchView(nav.dataset.target);
+      if (nav.closest('#account-menu') || nav.id === 'top-settings-btn') document.body.classList.add('mobile-content-open');
     }
   });
   document.addEventListener('lakbay:trip-loaded', () => { tripPeopleCache=[]; refreshWorkspace(); });
@@ -73,10 +75,77 @@ export function initWorkspace() {
 
 function mountNavigation() {
   const mobile = $('#global-bottom-nav');
-  if (mobile) { mobile.classList.add('mobile-bottom-nav'); mobile.innerHTML = '<button data-target="trips" aria-label="Overview" class="global-nav-mobile nav-btn-active"><span>◫</span><small>Overview</small></button><button data-target="days" aria-label="Itinerary" class="global-nav-mobile"><span>⌖</span><small>Itinerary</small></button><button data-target="food" aria-label="Food" class="global-nav-mobile"><span>♨</span><small>Food</small></button><button data-target="splitter" aria-label="Budget" class="global-nav-mobile"><span>₱</span><small>Budget</small></button><button data-target="forum" aria-label="Forum" class="global-nav-mobile"><span>☷</span><small>Forum</small></button>'; }
+  if (mobile) { mobile.classList.add('mobile-bottom-nav'); mobile.innerHTML = ''; }
   const tripNav = $('#trip-bottom-nav'); if (tripNav) tripNav.classList.add('hidden');
+  const desktopNav = $('#desktop-global-nav');
+  if (desktopNav && !$('#mobile-channel-list')) {
+    const channelNav = desktopNav.cloneNode(true);
+    channelNav.id = 'mobile-channel-list';
+    channelNav.className = 'mobile-channel-list';
+    channelNav.querySelectorAll('button[data-target]').forEach(button => {
+      button.classList.remove('global-nav-btn', 'nav-btn-active');
+      button.classList.add('mobile-channel-button');
+      button.setAttribute('aria-current', button.dataset.target === 'trips' ? 'page' : 'false');
+      button.querySelector('span:last-child')?.classList.remove('nav-icon');
+    });
+    channelNav.querySelectorAll('.nav-divider').forEach(divider => divider.classList.add('mobile-channel-divider'));
+    desktopNav.insertAdjacentElement('afterend', channelNav);
+  }
+  const sidebarContent = $('.sidebar-content');
+  if (sidebarContent && !$('#mobile-trip-browser')) sidebarContent.insertAdjacentHTML('afterbegin', '<section id="mobile-trip-browser" class="mobile-trip-browser"><h1>Your trips</h1><label class="mobile-trip-search"><span aria-hidden="true">⌕</span><input id="mobile-trip-search" type="search" placeholder="Search your trips…" aria-label="Search your trips"></label><div id="mobile-trip-cards" class="mobile-trip-cards"></div><div id="mobile-trip-empty-actions" class="mobile-trip-empty-actions hidden"><p>No trips yet</p><button type="button" class="action-button" id="mobile-create-trip">＋ Create a trip</button><button type="button" class="light-button" id="mobile-join-trip">Join a trip</button></div></section>');
+  $('#mobile-trip-search')?.addEventListener('input', event => {
+    const query=event.target.value.trim().toLocaleLowerCase();
+    document.querySelectorAll('#mobile-trip-cards [data-search]').forEach(card=>card.classList.toggle('hidden',!card.dataset.search.includes(query)));
+  });
+  $('#mobile-create-trip')?.addEventListener('click', () => $('#trip-server-add')?.click());
+  $('#mobile-join-trip')?.addEventListener('click', openJoinModal);
   const main = $('main');
-  if (main) main.insertAdjacentHTML('afterbegin', '<header class="lakbay-topbar mobile-workspace-header"><div class="topbar-left"><div class="trip-switcher-wrap"><button id="workspace-trip-switcher" class="workspace-trip-switcher" type="button" aria-haspopup="true" aria-expanded="false"><span class="trip-avatar" id="workspace-trip-avatar">＋</span><span class="trip-switcher-copy"><strong id="workspace-trip-title">Select a trip</strong><small id="workspace-breadcrumb" class="workspace-breadcrumb">Choose a trip to continue</small></span><span class="switch-chevron">⌄</span></button><div id="trip-switcher-menu" class="trip-switcher-menu trip-actions-menu hidden" role="menu"><button type="button" data-trip-action="invite">♧　Invite to Trip</button><button type="button" data-trip-action="settings">⚙　Trip Settings</button><button type="button" data-trip-action="info">ⓘ　Trip Info</button><button type="button" data-trip-action="leave" class="trip-action-danger">⇥　Leave Trip</button></div></div></div><div class="topbar-right"><button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch to dark mode" aria-pressed="false">☾</button><button class="top-icon" data-target="settings" aria-label="Trip settings">⚙</button><button class="top-avatar" data-target="profile" aria-label="My profile">☺</button><button class="mobile-login" id="mobile-login-inline">Log in</button></div></header>');
+  if (main && !$('#mobile-content-header')) main.insertAdjacentHTML('afterbegin', '<header id="mobile-content-header" class="lakbay-topbar mobile-workspace-header"><button type="button" class="mobile-back-button" id="mobile-nav-back" aria-label="Back to navigation"><span aria-hidden="true">←</span><span>Back</span></button><strong id="mobile-view-title">Overview</strong><span class="mobile-header-spacer"></span></header>');
+  const showContent = () => document.body.classList.add('mobile-content-open');
+  const showNavigation = () => document.body.classList.remove('mobile-content-open');
+  const syncPublicPreview = () => { if (document.body.classList.contains('has-public-trip-invite')) showContent(); };
+  syncPublicPreview();
+  new MutationObserver(syncPublicPreview).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+  $('#mobile-nav-back')?.addEventListener('click', showNavigation);
+  document.addEventListener('lakbay:view-changing', event => {
+    const labels = { trips: 'Overview', days: 'Itinerary', day: 'Itinerary', food: 'Food', splitter: 'Budget', forum: 'Forum', settings: 'Trip settings', profile: 'Profile settings' };
+    const title = $('#mobile-view-title');
+    if (title) title.textContent = labels[event.detail?.to] || 'Overview';
+    $('#mobile-channel-list .mobile-channel-button') && document.querySelectorAll('#mobile-channel-list .mobile-channel-button').forEach(button => {
+      const selected = button.dataset.target === event.detail?.to || (event.detail?.to === 'day' && button.dataset.target === 'days');
+      button.classList.toggle('nav-btn-active', selected);
+      button.setAttribute('aria-current', selected ? 'page' : 'false');
+    });
+  });
+  document.addEventListener('click', event => {
+    const button = event.target.closest('#mobile-channel-list [data-target]');
+    if (!button) return;
+    const switched = switchView(button.dataset.target);
+    if (switched !== false) {
+      $('#mobile-view-title').textContent = button.querySelector('span:last-child')?.textContent?.trim() || button.getAttribute('aria-label') || 'Overview';
+      showContent();
+    }
+  });
+  const swipeTargets = [$('.sidebar-content'), $('.trip-rail'), main].filter(Boolean);
+  swipeTargets.forEach(target => {
+    let startX = 0, startY = 0;
+    target.addEventListener('touchstart', event => {
+      if (event.touches.length !== 1 || event.target.closest('input,textarea,select,a,[contenteditable="true"],.itinerary-map,.leaflet-container')) return;
+      startX = event.touches[0].clientX; startY = event.touches[0].clientY;
+    }, { passive: true });
+    target.addEventListener('touchend', event => {
+      if (!startX || !event.changedTouches.length) return;
+      const dx = event.changedTouches[0].clientX - startX, dy = event.changedTouches[0].clientY - startY;
+      if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.25) {
+        if (dx < 0 && !document.body.classList.contains('mobile-content-open')) {
+          const current = $('#mobile-channel-list .mobile-channel-button.nav-btn-active') || $('#mobile-channel-list [data-target="trips"]');
+          current?.click();
+        } else if (dx > 0 && document.body.classList.contains('mobile-content-open')) showNavigation();
+      }
+      startX = 0; startY = 0;
+    }, { passive: true });
+  });
+  document.addEventListener('keydown', event => { if (event.key === 'Escape' && document.body.classList.contains('mobile-content-open')) showNavigation(); });
   if(main&&!$('#trip-action-modals'))main.insertAdjacentHTML('beforeend',`<div id="trip-action-modals"><div id="trip-info-modal" class="lakbay-modal-backdrop hidden" data-close-modal><section class="lakbay-modal trip-info-dialog" role="dialog" aria-modal="true" aria-labelledby="trip-info-title"><button type="button" class="modal-x" data-dismiss-modal aria-label="Close">×</button><h2 id="trip-info-title">Trip information</h2><div id="trip-info-content"></div><div class="modal-actions"><button type="button" class="light-button" data-dismiss-modal>Close</button></div></section></div><div id="leave-trip-modal" class="lakbay-modal-backdrop hidden" data-close-modal><section class="lakbay-modal leave-trip-dialog" role="dialog" aria-modal="true" aria-labelledby="leave-trip-title"><button type="button" class="modal-x" data-dismiss-modal aria-label="Close">×</button><h2 id="leave-trip-title">Leave this trip?</h2><p>Your expense and payment history will remain for budget tracking. Expense shares will be recalculated across the members who remain. Entries that include you will continue to identify you as a former member. If you created the trip, ownership will transfer to another member.</p><div class="modal-actions"><button type="button" class="light-button" data-dismiss-modal>Stay</button><button type="button" class="trip-action-confirm-leave" id="confirm-leave-trip">Leave trip</button></div></section></div></div>`);
   $('#confirm-leave-trip')?.addEventListener('click',leaveCurrentTrip);
   const mobileLogin=$('#mobile-login-inline'); if(mobileLogin){mobileLogin.classList.toggle('hidden',!!currentUser);mobileLogin.onclick=()=>$('#login-discord-btn')?.click()}
@@ -206,6 +275,7 @@ async function refreshTripSwitcher() {
     catch (error) { console.error('Could not refresh trip switcher.', error); }
   }
   const currentId = activeTrip?.id == null ? '' : String(activeTrip.id);
+  renderMobileTripBrowser(trips);
   const rail = $('#trip-server-list');
   if (rail) {
     tripFolders = readTripFolders().filter(folder => Array.isArray(folder.tripIds)).map(folder => ({ ...folder, tripIds: folder.tripIds.map(String) })).filter(folder => folder.tripIds.some(id => trips.some(trip => String(trip.id) === id)));
@@ -230,6 +300,18 @@ async function refreshTripSwitcher() {
   document.querySelectorAll('[data-trip-action="settings"]').forEach(button=>button.classList.toggle('hidden',!isTripMember||activeUserRole==='viewer'));
   document.querySelectorAll('[data-trip-action="leave"]').forEach(button=>button.classList.toggle('hidden',!isTripMember));
   document.querySelectorAll('.workspace-trip-switcher').forEach(button=>{button.disabled=!activeTrip;button.setAttribute('aria-disabled',String(!activeTrip))});
+}
+
+function renderMobileTripBrowser(trips) {
+  const list=$('#mobile-trip-cards'),empty=$('#mobile-trip-empty-actions');
+  if(!list||!empty)return;
+  list.innerHTML=trips.map(trip=>{
+    const name=trip.destination||'Untitled trip',date=trip.workspace_data?.start_date||trip.days?.map(day=>day.date).filter(Boolean).sort()[0]||'';
+    const detail=`${(trip.days||[]).length} ${(trip.days||[]).length===1?'day':'days'} planned${date?` · ${new Date(`${date}T00:00:00`).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})}`:''}`;
+    const iconUrl=safeWebUrl(trip.workspace_data?.icon_url),icon=iconUrl?`<img src="${iconUrl}" alt="">`:safe(trip.emoji||tripInitials(trip));
+    return `<button type="button" class="mobile-trip-card" data-trip-select="${safe(trip.id)}" data-search="${safe(`${name} ${trip.emoji||''}`.toLocaleLowerCase())}"><span class="mobile-trip-card-icon">${icon}</span><span class="mobile-trip-card-copy"><strong>${safe(name)}</strong><small>${safe(detail)}</small></span><span class="mobile-trip-card-arrow" aria-hidden="true">›</span></button>`;
+  }).join('');
+  empty.classList.toggle('hidden',trips.length>0);
 }
 
 async function selectTrip(id) {
@@ -372,8 +454,8 @@ function syncAccessGate() {
   $('.mobile-workspace-header [data-target="settings"]')?.classList.toggle('hidden', needsLogin || !activeTrip || !isTripMember || activeUserRole === 'viewer');
   $('.top-avatar')?.classList.toggle('hidden', needsLogin || !currentUser);
   $('#top-settings-btn')?.classList.toggle('hidden', needsLogin || !activeTrip || !isTripMember || activeUserRole === 'viewer');
-  document.querySelectorAll('.global-nav-btn[data-target="forum"], .global-nav-mobile[data-target="forum"]').forEach(button => button.classList.toggle('hidden', !isTripMember));
-  document.querySelectorAll('.global-nav-btn[data-target="settings"]').forEach(button => button.classList.toggle('hidden', !isTripMember || activeUserRole === 'viewer'));
+  document.querySelectorAll('.global-nav-btn[data-target="forum"], .global-nav-mobile[data-target="forum"], .mobile-channel-button[data-target="forum"]').forEach(button => button.classList.toggle('hidden', !isTripMember));
+  document.querySelectorAll('.global-nav-btn[data-target="settings"], .mobile-channel-button[data-target="settings"]').forEach(button => button.classList.toggle('hidden', !isTripMember || activeUserRole === 'viewer'));
   $('#guest-join-trip')?.classList.add('hidden');
   $('#all-trips-button')?.classList.toggle('hidden', publicGuest);
   $('#overview-share')?.classList.toggle('hidden', activeUserRole !== 'owner');
@@ -476,21 +558,28 @@ let recipeDraftItems = [];
 let selectedRecipeId = null;
 let expandedIngredientIds = new Set();
 let selectedIngredientCategories = new Set();
+let mobileFoodTab = 'ingredients';
 
 function mountPlanFood() {
   const view = $('#food-view'); if (!view) return;
-  view.innerHTML = `<header class="plan-page-head food-page-head"><div><h1>Food</h1><p>Manage ingredients, recipes, and meal assignments.</p></div><button type="button" id="open-grocery-list" class="light-button">Grocery list <span id="grocery-badge">0</span></button></header>
+  view.innerHTML = `<header class="plan-page-head food-page-head"><div><h1>Food</h1><p>Manage ingredients, recipes, and meal assignments.</p></div><button type="button" id="open-grocery-list" class="light-button desktop-grocery-list-link">Grocery list <span id="grocery-badge">0</span></button></header><nav class="food-mobile-tabs" role="tablist" aria-label="Food sections"><button type="button" role="tab" data-food-tab="ingredients" aria-selected="true" class="is-active">Ingredients</button><button type="button" role="tab" data-food-tab="recipes" aria-selected="false">Recipes</button><button type="button" role="tab" data-food-tab="shopping" aria-selected="false">Shopping Trips</button></nav>
     <div id="food-browser-screen" class="food-workspace"><aside class="ingredient-registry"><div class="panel-heading"><div><h2>Ingredients</h2><p>Per-unit nutrition, cost, and store details.</p></div><div class="ingredient-heading-actions"><button type="button" id="import-ingredients-btn" class="light-button">Import CSV</button><button type="button" id="add-ingredient" class="action-button">＋ Add</button><input type="file" id="ingredients-csv-file" accept=".csv,text/csv" class="hidden" aria-label="Import ingredients CSV"></div></div><p id="ingredient-import-status" class="ingredient-import-status hidden" role="status"></p><div class="ingredient-toolbar"><label class="ingredient-search"><span>⌕</span><input type="search" id="ingredient-search-input" placeholder="Search ingredients…" aria-label="Search ingredients"></label><div class="ingredient-filter-wrap"><button type="button" id="ingredient-filter-button" class="ingredient-filter-button" aria-haspopup="true" aria-expanded="false">Category <span id="ingredient-filter-count"></span><span aria-hidden="true">⌄</span></button><div id="ingredient-filter-menu" class="ingredient-filter-menu hidden" role="group" aria-label="Filter ingredients by category"></div></div></div><div id="ingredients-list"></div></aside><section class="recipe-browser"><div class="panel-heading recipe-browser-heading"><div><h2>Recipes</h2><p>Browse and build the trip menu.</p></div><button type="button" id="add-recipe" class="action-button">＋ New recipe</button></div><label class="recipe-search"><span>⌕</span><input type="search" id="recipe-search-input" placeholder="Search recipes…"></label><div id="recipes-list" class="recipe-grid"></div></section></div>
     <section id="food-detail-screen" class="food-detail-screen hidden"><button type="button" id="back-to-recipes" class="forum-back-button">← All recipes</button><div id="recipe-detail"></div></section>
-    <section id="grocery-list-screen" class="grocery-list-screen hidden"><header class="plan-page-head"><div><h1>Grocery list</h1><p>Quantities and package estimates across all recipes.</p></div><div class="plan-page-actions"><button type="button" id="back-to-food" class="light-button">← Food</button></div></header><div class="pretty-card grocery-table-wrap"><table class="grocery-table"><colgroup><col class="grocery-col-ingredient"><col class="grocery-col-needed"><col class="grocery-col-purchased"><col class="grocery-col-cost"></colgroup><thead><tr><th>Ingredient</th><th>Needed</th><th>Purchased</th><th>Estimated cost</th></tr></thead><tbody id="grocery-items"></tbody></table><div id="grocery-empty" class="empty-note hidden">Add ingredients to recipes to build this list.</div></div></section>
+    <section id="grocery-list-screen" class="grocery-list-screen hidden"><header class="plan-page-head"><div><h1>Grocery list</h1><p>Quantities and package estimates across all recipes.</p></div><div class="plan-page-actions"><button type="button" id="back-to-food" class="light-button">← Food</button></div></header><div class="pretty-card grocery-table-wrap"><table class="grocery-table"><colgroup><col class="grocery-col-ingredient"><col class="grocery-col-needed"><col class="grocery-col-purchased"><col class="grocery-col-cost"></colgroup><thead><tr><th>Ingredient</th><th>Needed</th><th>Purchased</th><th>Estimated cost</th></tr></thead><tbody id="grocery-items"></tbody></table><div id="grocery-empty" class="empty-note hidden">Add ingredients to recipes to build this list.</div></div><section class="pretty-card shopping-history-section grocery-shopping-history"><div class="shopping-history-heading"><h2>Shopping trips</h2><span id="shopping-trip-count-details">0</span></div><div id="shopping-trip-history-details"></div></section></section>
+    <section id="shopping-trips-screen" class="shopping-trips-screen hidden"><div class="shopping-history-section pretty-card"><div class="shopping-history-heading"><div><h2>Shopping trips</h2><p>Purchases recorded for this trip.</p></div><span id="shopping-trip-count">0</span></div><div class="shopping-trip-shortcuts"><button type="button" id="open-grocery-details" class="light-button">View grocery list details</button><button type="button" id="log-shopping-trip" class="action-button">＋ Log shopping trip</button></div><div id="shopping-trip-history"></div></div></section>
     <div id="ingredient-modal" class="lakbay-modal-backdrop hidden" data-close-modal><form class="lakbay-modal ingredient-dialog" id="ingredient-form" role="dialog" aria-modal="true" aria-labelledby="ingredient-modal-title"><button type="button" class="modal-x" data-dismiss-modal aria-label="Close">×</button><h2 id="ingredient-modal-title">Add an ingredient</h2><p>Nutrition and reference cost are recorded per unit.</p><label>Ingredient name<input name="name" required maxlength="100" placeholder="e.g. Jasmine rice"></label><div class="two-fields"><label>Unit<input name="unit" list="ingredient-unit-options" required maxlength="24" placeholder="g"><datalist id="ingredient-unit-options"><option value="g"><option value="kg"><option value="mL"><option value="L"><option value="piece"><option value="pc"><option value="bundle"><option value="bag"><option value="pack"></datalist></label><label>Reference cost per <span class="ingredient-unit-copy">unit</span><input name="unitCost" type="number" min="0" step="any" placeholder="0.00"></label></div><div class="two-fields"><label>Store quantity <span class="optional-label">Optional</span><input name="size" type="number" min="0.001" step="any" placeholder="e.g. 1000"></label><label>Store price <span class="optional-label">Optional</span><input name="cost" type="number" min="0" step="any" placeholder="0.00"></label></div><details class="ingredient-nutrition-fields"><summary>Nutrition per <span class="ingredient-unit-copy">unit</span> <span class="optional-label">Optional</span></summary><div class="two-fields"><label>Calories<input name="calories" type="number" min="0" step="any" placeholder="kcal"></label><label>Carbohydrates<input name="carbs" type="number" min="0" step="any" placeholder="g"></label><label>Protein<input name="protein" type="number" min="0" step="any" placeholder="g"></label><label>Fat<input name="fat" type="number" min="0" step="any" placeholder="g"></label></div></details><div class="two-fields"><label>Category <span class="optional-label">Optional</span><input name="category" maxlength="80" placeholder="e.g. Vegetables"></label><label>Subcategory <span class="optional-label">Optional</span><input name="subcategory" maxlength="80" placeholder="e.g. Root vegetables"></label></div><label>Source <span class="optional-label">Optional</span><input name="source" maxlength="160" placeholder="Store or product source"></label><label>Notes <span class="optional-label">Optional</span><textarea name="notes" rows="3" placeholder="Brand, substitutions, or other notes"></textarea></label><div class="ingredient-scaling-note">Store price and quantity determine the cost per unit when both are provided. Otherwise, the reference cost is multiplied by recipe quantities.</div><div class="modal-actions"><button type="button" class="light-button" data-dismiss-modal>Cancel</button><button type="submit" class="action-button">Save ingredient</button></div><button type="button" id="delete-ingredient-modal" class="payment-modal-delete hidden">Delete ingredient</button></form></div>
     <div id="recipe-modal" class="lakbay-modal-backdrop hidden" data-close-modal><form class="lakbay-modal recipe-dialog" id="recipe-form" role="dialog" aria-modal="true" aria-labelledby="recipe-modal-title"><button type="button" class="modal-x" data-dismiss-modal aria-label="Close">×</button><h2 id="recipe-modal-title">Create a recipe</h2><p>Add ingredients and assign optional cooks.</p><label>Recipe title<input name="name" required maxlength="120" placeholder="e.g. Shoyu ramen"></label><label>Description <span class="optional-label">Optional</span><textarea name="description" rows="3" maxlength="1000" placeholder="Describe the dish"></textarea></label><label>Image URL <span class="optional-label">Optional</span><input name="image" type="url" placeholder="https://…"></label><label>Assign cooks <span class="optional-label">Optional</span><input id="recipe-cook-search" type="search" placeholder="Search trip members"></label><div id="recipe-cook-selection" class="recipe-cook-selection"></div><div id="recipe-cook-options" class="group-member-options"></div><div class="recipe-ingredient-builder"><h3>Ingredients</h3><div class="recipe-add-line"><select id="recipe-add-ingredient" aria-label="Choose an ingredient"></select><input id="recipe-add-quantity" type="number" min="0.001" step="any" placeholder="Quantity" aria-label="Quantity"><button type="button" id="recipe-add-line" class="light-button">Add</button></div><div id="recipe-draft-items"></div><div class="recipe-cost-total">Recipe total <strong id="recipe-total-cost">₱0.00</strong></div></div><div class="modal-actions"><button type="button" class="light-button" data-dismiss-modal>Cancel</button><button type="submit" class="action-button">Save recipe</button></div><button type="button" id="delete-recipe-modal" class="payment-modal-delete hidden">Delete recipe</button></form></div>`;
 
   $('#add-ingredient').onclick = () => openIngredientModal();
   $('#add-recipe').onclick = () => { void openRecipeModal(); };
   $('#open-grocery-list').onclick = () => showFoodScreen('groceries');
-  $('#back-to-food').onclick = () => showFoodScreen('browse');
-  $('#back-to-recipes').onclick = () => { selectedRecipeId = null; showFoodScreen('browse'); };
+  $('#back-to-food').onclick = () => showFoodScreen(window.matchMedia('(max-width: 760px)').matches ? 'shopping' : 'browse');
+  $('#open-grocery-details').onclick = () => showFoodScreen('groceries');
+  $('#food-view').addEventListener('click', event => {
+    const tab = event.target.closest('[data-food-tab]');
+    if (tab) { mobileFoodTab = tab.dataset.foodTab; showFoodScreen(mobileFoodTab === 'shopping' ? 'shopping' : 'browse'); }
+  });
+  $('#back-to-recipes').onclick = () => { selectedRecipeId = null; mobileFoodTab = 'recipes'; showFoodScreen('browse'); };
   $('#recipe-search-input').addEventListener('input', renderRecipes);
   $('#ingredient-search-input').addEventListener('input', renderIngredients);
   $('#ingredient-filter-button').addEventListener('click',event=>{const menu=$('#ingredient-filter-menu'),open=menu.classList.contains('hidden');menu.classList.toggle('hidden',!open);event.currentTarget.setAttribute('aria-expanded',String(open))});
@@ -526,6 +615,7 @@ function mountPlanFood() {
   });
   ensureShoppingTripUI();
   renderFood();
+  showFoodScreen('browse');
 }
 
 function foodData() {
@@ -677,12 +767,23 @@ function saveableRecipeLine(item, data) {
   return { ingredient_id: item.ingredient_id || ingredient?.id || null, name: ingredient?.name || item.name || 'Ingredient', unit: ingredient?.unit || item.unit || 'pcs', qty, unitCost, cost: ingredient ? qty * unitCost : Number(item.cost ?? qty * unitCost), package_size: ingredient ? size : Number(item.package_size || 0), package_cost: ingredient ? packageCost(ingredient) : Number(item.package_cost || 0) };
 }
 function showFoodScreen(screen) {
+  const mobile = window.matchMedia('(max-width: 760px)').matches;
+  const isShopping = screen === 'shopping';
+  const isGroceries = screen === 'groceries';
   $('#food-browser-screen').classList.toggle('hidden', screen !== 'browse');
   $('#food-detail-screen').classList.toggle('hidden', screen !== 'detail');
   $('#grocery-list-screen').classList.toggle('hidden', screen !== 'groceries');
-  $('.food-page-head')?.classList.toggle('hidden',screen==='groceries');
+  $('#shopping-trips-screen')?.classList.toggle('hidden', !isShopping);
+  $('.food-page-head')?.classList.toggle('hidden',isGroceries);
+  $('#food-view')?.classList.toggle('food-tab-recipes', mobile && mobileFoodTab === 'recipes');
+  $('#food-view')?.classList.toggle('food-tab-ingredients', mobile && mobileFoodTab === 'ingredients');
+  document.querySelectorAll('#food-view [data-food-tab]').forEach(button => {
+    const selected = button.dataset.foodTab === mobileFoodTab;
+    button.classList.toggle('is-active', selected);
+    button.setAttribute('aria-selected', String(selected));
+  });
   if (screen === 'groceries') renderGroceryList();
-  else if (screen === 'browse') renderRecipes();
+  else if (screen === 'browse' || isShopping) renderRecipes();
 }
 function renderFood() {
   const data = foodData();
@@ -755,7 +856,7 @@ function handleIngredientListClick(event) {
 function handleRecipeListClick(event) {
   const edit = event.target.closest('[data-edit-recipe]'), open = event.target.closest('[data-open-recipe]');
   if (edit) { void openRecipeModal(edit.dataset.editRecipe); return; }
-  if (open) { selectedRecipeId = open.dataset.openRecipe; renderRecipeDetail(selectedRecipeId); showFoodScreen('detail'); }
+  if (open) { selectedRecipeId = open.dataset.openRecipe; if(window.matchMedia('(max-width: 760px)').matches)mobileFoodTab='recipes'; renderRecipeDetail(selectedRecipeId); showFoodScreen('detail'); }
 }
 function openIngredientModal(id = '') {
   if (activeUserRole === 'viewer') return;
@@ -863,10 +964,8 @@ function aggregateGroceries(data = foodData()) {
 }
 function ensureShoppingTripUI(){
   const screen=$('#grocery-list-screen');if(!screen||$('#shopping-trip-modal'))return;
-  $('#back-to-food')?.insertAdjacentHTML('afterend','<button type="button" id="log-shopping-trip" class="action-button">＋ Log shopping trip</button>');
   const table=screen.querySelector('.grocery-table-wrap');
   table?.insertAdjacentHTML('afterbegin','<div class="grocery-cost-summary"><div><small>Total estimated cost</small><strong id="grocery-estimated-total">₱0.00</strong></div><div><small>Remaining estimate</small><strong id="grocery-remaining-total">₱0.00</strong></div></div>');
-  table?.insertAdjacentHTML('afterend','<section class="pretty-card shopping-history-section"><div class="shopping-history-heading"><h2>Shopping trips</h2><span id="shopping-trip-count">0</span></div><div id="shopping-trip-history"></div></section>');
   screen.insertAdjacentHTML('beforeend',`<div id="shopping-trip-modal" class="lakbay-modal-backdrop hidden" data-close-modal><form class="lakbay-modal shopping-trip-dialog" id="shopping-trip-form" role="dialog" aria-modal="true" aria-labelledby="shopping-trip-title"><button type="button" class="modal-x" data-dismiss-modal aria-label="Close">×</button><h2 id="shopping-trip-title">Log a shopping trip</h2><p>Record store purchases and how the bill was paid. Linked grocery quantities update automatically.</p><label>Store or location<input name="location" required maxlength="120" placeholder="e.g. SM Supermarket"></label><fieldset class="shopping-payers"><legend>Paid by</legend><div id="shopping-payer-options"></div><button type="button" class="light-button shopping-add-payer" id="add-shopping-payer">＋ Add another person</button><div class="shopping-payer-summary"><small id="shopping-payer-total">Allocated: ₱0.00 of ₱0.00</small><button type="button" class="light-button" id="split-shopping-payment">Split evenly</button></div><p id="shopping-payment-error" class="shopping-payment-error hidden" role="status" aria-live="polite"></p></fieldset><div class="shopping-purchase-heading"><h3>Recipe ingredients</h3><small>Choose ingredients and enter purchased quantities and actual prices.</small></div><div id="shopping-purchase-items"></div><div class="shopping-custom-heading"><h3>Other purchases</h3><button type="button" class="light-button" id="add-custom-purchase">＋ Add item</button></div><div id="shopping-custom-items"></div><div class="shopping-purchase-total"><span>Actual trip total</span><strong id="shopping-purchase-total">₱0.00</strong></div><div class="modal-actions"><button type="button" class="light-button" data-dismiss-modal>Cancel</button><button type="submit" class="action-button" id="save-shopping-trip">Save shopping trip</button></div></form></div>`);
   $('#log-shopping-trip').onclick=()=>{void openShoppingTripModal()};
   $('#shopping-trip-form').addEventListener('submit',saveShoppingTrip);
@@ -892,8 +991,9 @@ function renderGroceryList() {
   $('#grocery-estimated-total').textContent=money(list.reduce((sum,item)=>sum+item.estimatedCost,0));
   $('#grocery-remaining-total').textContent=money(list.reduce((sum,item)=>sum+item.remainingCost,0));
   const history=foodData().shoppingTrips||[];
-  $('#shopping-trip-count').textContent=String(history.length);
-  $('#shopping-trip-history').innerHTML=history.length?[...history].reverse().map(trip=>{const payers=trip.buyers?.length?trip.buyers.map(payer=>`${safe(payer.name)} · ${money(payer.amount)}`).join(', '):(trip.buyer_names||[]).map(safe).join(', ')||'No payer listed';return `<article class="shopping-history-card"><div class="shopping-history-card-head"><div><strong>${safe(trip.location||'Shopping trip')}</strong><small>${trip.date?new Date(trip.date).toLocaleString():''} · Paid by ${payers}</small></div><b>${money(trip.total||0)}</b></div><ul>${(trip.items||[]).map(item=>`<li>${safe(item.name)} <span>${formatQuantity(item.quantity)} ${safe(item.unit)} · ${money(item.amount)}</span></li>`).join('')}</ul></article>`}).join(''):'<div class="empty-note">No shopping trips recorded.</div>';
+  const historyMarkup=history.length?[...history].reverse().map(trip=>{const payers=trip.buyers?.length?trip.buyers.map(payer=>`${safe(payer.name)} · ${money(payer.amount)}`).join(', '):(trip.buyer_names||[]).map(safe).join(', ')||'No payer listed';return `<article class="shopping-history-card"><div class="shopping-history-card-head"><div><strong>${safe(trip.location||'Shopping trip')}</strong><small>${trip.date?new Date(trip.date).toLocaleString():''} · Paid by ${payers}</small></div><b>${money(trip.total||0)}</b></div><ul>${(trip.items||[]).map(item=>`<li>${safe(item.name)} <span>${formatQuantity(item.quantity)} ${safe(item.unit)} · ${money(item.amount)}</span></li>`).join('')}</ul></article>`}).join(''):'<div class="empty-note">No shopping trips recorded.</div>';
+  $('#shopping-trip-count').textContent=String(history.length);$('#shopping-trip-history').innerHTML=historyMarkup;
+  $('#shopping-trip-count-details').textContent=String(history.length);$('#shopping-trip-history-details').innerHTML=historyMarkup;
 }
 function formatQuantity(value){return Number(value||0).toLocaleString('en-PH',{maximumFractionDigits:3})}
 async function openShoppingTripModal(){
