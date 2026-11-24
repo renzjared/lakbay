@@ -54,6 +54,11 @@ export async function renderSplitter() {
     });
     tripUsers = people;
   }
+  (activeTrip.workspace_data?.departed_members || []).forEach(person => {
+    const id = String(person.user_id || person.id || '');
+    if (id && !tripUsers.some(user => String(user.id) === id)) tripUsers.push({ id, name: person.name || 'Former member', left: true });
+    else { const existing = tripUsers.find(user => String(user.id) === id); if (existing) { existing.left = true; existing.name ||= person.name || 'Former member'; } }
+  });
   (activeTrip.workspace_data?.people || []).forEach((person,index)=>{
     const id=String(person.id||`guest-${index}-${person.name}`);
     if(!tripUsers.some(user=>String(user.id)===id))tripUsers.push({id,name:person.name||'Guest'});
@@ -70,14 +75,17 @@ export async function renderSplitter() {
   activeTrip.expenses.forEach(exp => {
     const card = document.createElement('div');
     card.className = 'expense-card p-4 mb-3 flex justify-between items-center';
-    const payerName = tripUsers.find(u => u.id === exp.payer_id)?.name || 'Someone';
+    const payer = tripUsers.find(u => String(u.id) === String(exp.payer_id));
+    const payerName = `${payer?.name || 'Someone'}${payer?.left ? ' (left)' : ''}`;
+    const departedShares = (Array.isArray(exp.split_between) ? exp.split_between : []).map(id => tripUsers.find(user => String(user.id) === String(id))).filter(user => user?.left).map(user => user.name);
     
     card.innerHTML = `
       <div class="flex items-center gap-4">
         <div class="w-12 h-12 bg-purple-50 rounded-xl flex items-center justify-center text-xl font-bold text-[#ce82ff]">💸</div>
         <div>
           <h3 class="font-extrabold text-lg text-[#4b4b4b] leading-tight">${exp.title}</h3>
-          <p class="text-xs font-bold text-gray-400 mt-1">Paid by ${payerName}</p>
+          <p class="text-xs font-bold text-gray-400 mt-1">Paid by ${payerName}${departedShares.length ? ` · includes former member${departedShares.length > 1 ? 's' : ''}: ${departedShares.join(', ')}` : ''}</p>
+          ${exp.shopping_location ? `<p class="shopping-expense-detail">Shopping trip · ${exp.shopping_location}${Array.isArray(exp.shopping_items) && exp.shopping_items.length ? ` · ${exp.shopping_items.join(', ')}` : ''}</p>` : ''}
         </div>
       </div>
       <div class="text-right">
@@ -97,7 +105,7 @@ function renderDebts() {
   tripUsers.forEach(u => balances[u.id] = 0);
 
   activeTrip.expenses.forEach(exp => {
-    const splitters = Array.isArray(exp.split_between) ? exp.split_between : [];
+    const splitters = (Array.isArray(exp.split_between) ? exp.split_between : []).filter(id => !tripUsers.some(user => String(user.id) === String(id) && user.left));
     if (splitters.length === 0) return;
     const splitAmount = Number(exp.amount || 0) / splitters.length;
     if (balances[exp.payer_id] !== undefined) balances[exp.payer_id] += Number(exp.amount || 0);
@@ -142,8 +150,10 @@ function renderDebts() {
   }
 
   transactions.forEach(t => {
-    const fromName = tripUsers.find(u => u.id === t.from)?.name || 'Someone';
-    const toName = tripUsers.find(u => u.id === t.to)?.name || 'Someone';
+    const fromPerson = tripUsers.find(u => String(u.id) === String(t.from));
+    const toPerson = tripUsers.find(u => String(u.id) === String(t.to));
+    const fromName = `${fromPerson?.name || 'Someone'}${fromPerson?.left ? ' (left)' : ''}`;
+    const toName = `${toPerson?.name || 'Someone'}${toPerson?.left ? ' (left)' : ''}`;
     DOM.debtsContainer.innerHTML += `
       <div class="flex items-center justify-between text-sm">
         <span class="font-bold text-gray-500">${fromName} <span class="text-gray-300 mx-1">owes</span> ${toName}</span>

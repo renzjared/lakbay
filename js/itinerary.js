@@ -8,6 +8,7 @@ export let activeTrip = null;
 export let activeDayId = null;
 export let activeUserRole = 'viewer'; 
 export let isTripMember = false;
+export function clearActiveTrip(){activeTrip=null;activeDayId=null;previewDayId=null;isTripMember=false;activeUserRole='viewer'}
 let editingActivityId = null;
 let previewDayId = null;
 let itineraryMap = null;

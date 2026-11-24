@@ -1,4 +1,4 @@
-import { activeTrip, loadTripDays, isTripMember, activeUserRole } from './itinerary.js';
+import { activeTrip, loadTripDays, clearActiveTrip, isTripMember, activeUserRole } from './itinerary.js';
 import { getTrip, getTrips, getPublicTripView, updateTrip, useSupabase, supabase } from './storage.js';
 import { currentUser } from './auth.js';
 import { switchView, returnFromProfile, showToast } from './ui.js';
@@ -76,14 +76,15 @@ function mountNavigation() {
   if (mobile) { mobile.classList.add('mobile-bottom-nav'); mobile.innerHTML = '<button data-target="trips" aria-label="Overview" class="global-nav-mobile nav-btn-active"><span>◫</span><small>Overview</small></button><button data-target="days" aria-label="Itinerary" class="global-nav-mobile"><span>⌖</span><small>Itinerary</small></button><button data-target="food" aria-label="Food" class="global-nav-mobile"><span>♨</span><small>Food</small></button><button data-target="splitter" aria-label="Budget" class="global-nav-mobile"><span>₱</span><small>Budget</small></button><button data-target="forum" aria-label="Forum" class="global-nav-mobile"><span>☷</span><small>Forum</small></button>'; }
   const tripNav = $('#trip-bottom-nav'); if (tripNav) tripNav.classList.add('hidden');
   const main = $('main');
-  if (main) main.insertAdjacentHTML('afterbegin', '<header class="lakbay-topbar mobile-workspace-header"><div class="topbar-left"><div class="trip-switcher-wrap"><button id="workspace-trip-switcher" class="workspace-trip-switcher" type="button" aria-haspopup="true" aria-expanded="false"><span class="trip-avatar" id="workspace-trip-avatar">＋</span><span class="trip-switcher-copy"><strong id="workspace-trip-title">Select a trip</strong><small id="workspace-breadcrumb" class="workspace-breadcrumb">Choose a trip to continue</small></span><span class="switch-chevron">⌄</span></button><div id="trip-switcher-menu" class="trip-switcher-menu hidden"><div id="trip-switcher-options"></div><button class="trip-switcher-create workspace-trip-create" type="button">＋ Create a trip</button></div></div></div><div class="topbar-right"><button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch to dark mode" aria-pressed="false">☾</button><button class="top-icon" data-target="settings" aria-label="Trip settings">⚙</button><button class="top-avatar" data-target="profile" aria-label="My profile">☺</button><button class="mobile-login" id="mobile-login-inline">Log in</button></div></header>');
+  if (main) main.insertAdjacentHTML('afterbegin', '<header class="lakbay-topbar mobile-workspace-header"><div class="topbar-left"><div class="trip-switcher-wrap"><button id="workspace-trip-switcher" class="workspace-trip-switcher" type="button" aria-haspopup="true" aria-expanded="false"><span class="trip-avatar" id="workspace-trip-avatar">＋</span><span class="trip-switcher-copy"><strong id="workspace-trip-title">Select a trip</strong><small id="workspace-breadcrumb" class="workspace-breadcrumb">Choose a trip to continue</small></span><span class="switch-chevron">⌄</span></button><div id="trip-switcher-menu" class="trip-switcher-menu trip-actions-menu hidden" role="menu"><button type="button" data-trip-action="invite">♧　Invite to Trip</button><button type="button" data-trip-action="settings">⚙　Trip Settings</button><button type="button" data-trip-action="info">ⓘ　Trip Info</button><button type="button" data-trip-action="leave" class="trip-action-danger">⇥　Leave Trip</button></div></div></div><div class="topbar-right"><button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch to dark mode" aria-pressed="false">☾</button><button class="top-icon" data-target="settings" aria-label="Trip settings">⚙</button><button class="top-avatar" data-target="profile" aria-label="My profile">☺</button><button class="mobile-login" id="mobile-login-inline">Log in</button></div></header>');
+  if(main&&!$('#trip-action-modals'))main.insertAdjacentHTML('beforeend',`<div id="trip-action-modals"><div id="trip-info-modal" class="lakbay-modal-backdrop hidden" data-close-modal><section class="lakbay-modal trip-info-dialog" role="dialog" aria-modal="true" aria-labelledby="trip-info-title"><button type="button" class="modal-x" data-dismiss-modal aria-label="Close">×</button><h2 id="trip-info-title">Trip information</h2><div id="trip-info-content"></div><div class="modal-actions"><button type="button" class="light-button" data-dismiss-modal>Close</button></div></section></div><div id="leave-trip-modal" class="lakbay-modal-backdrop hidden" data-close-modal><section class="lakbay-modal leave-trip-dialog" role="dialog" aria-modal="true" aria-labelledby="leave-trip-title"><button type="button" class="modal-x" data-dismiss-modal aria-label="Close">×</button><h2 id="leave-trip-title">Leave this trip?</h2><p>Your expense and payment history will remain for budget tracking. Expense shares will be recalculated across the members who remain. Entries that include you will continue to identify you as a former member. If you created the trip, ownership will transfer to another member.</p><div class="modal-actions"><button type="button" class="light-button" data-dismiss-modal>Stay</button><button type="button" class="trip-action-confirm-leave" id="confirm-leave-trip">Leave trip</button></div></section></div></div>`);
+  $('#confirm-leave-trip')?.addEventListener('click',leaveCurrentTrip);
   const mobileLogin=$('#mobile-login-inline'); if(mobileLogin){mobileLogin.classList.toggle('hidden',!!currentUser);mobileLogin.onclick=()=>$('#login-discord-btn')?.click()}
   document.querySelectorAll('.workspace-trip-switcher').forEach(button => button.addEventListener('click', () => {
     const menu = button.closest('.trip-switcher-wrap')?.querySelector('.trip-switcher-menu');
     const open = menu?.classList.toggle('hidden') === false;
     button.setAttribute('aria-expanded', String(open));
   }));
-  document.querySelectorAll('.workspace-trip-create').forEach(button => button.addEventListener('click', createTripFromSwitcher));
   $('#trip-server-add')?.addEventListener('click', createTripFromSwitcher);
   const rail = $('#trip-server-list');
   rail?.addEventListener('dragstart', event => {
@@ -124,6 +125,8 @@ function mountNavigation() {
     $('#account-menu-trigger')?.setAttribute('aria-expanded', String(open));
   });
   document.addEventListener('click', e => {
+    const tripAction=e.target.closest('[data-trip-action]');
+    if(tripAction){e.preventDefault();handleTripAction(tripAction.dataset.tripAction);return}
     const item = e.target.closest('[data-trip-select]');
     if (item) { selectTrip(item.dataset.tripSelect); return; }
     if (!e.target.closest('.account-menu-wrap')) {
@@ -137,6 +140,33 @@ function mountNavigation() {
 function closeTripSwitcher() {
   document.querySelectorAll('.trip-switcher-menu').forEach(menu => menu.classList.add('hidden'));
   document.querySelectorAll('.workspace-trip-switcher').forEach(button => button.setAttribute('aria-expanded', 'false'));
+}
+
+async function handleTripAction(action){
+  closeTripSwitcher();
+  if(!activeTrip)return;
+  if(action==='invite'){$('#share-trip-btn')?.click();return}
+  if(action==='settings'){switchView('settings');return}
+  if(action==='leave'){openModal('leave-trip-modal');return}
+  if(action==='info'){
+    const selectedId=String(activeTrip.id);await loadTripPeople();if(!activeTrip||String(activeTrip.id)!==selectedId)return;
+    const data=workspaceData(),start=data.start_date||'',end=data.end_date||'',people=tripPeopleCache.length?tripPeopleCache:[];
+    const dateCopy=start&&end?`${new Date(`${start}T00:00:00`).toLocaleDateString()} – ${new Date(`${end}T00:00:00`).toLocaleDateString()}`:start?`Starts ${new Date(`${start}T00:00:00`).toLocaleDateString()}`:'Dates not set';
+    const daysUntil=start?Math.ceil((new Date(`${start}T00:00:00`).getTime()-new Date(new Date().toDateString()).getTime())/86400000):null;
+    const countdown=daysUntil===null?'Not scheduled':daysUntil>0?`${daysUntil} days until start`:daysUntil===0?'Starts today':'Already started';
+    const ownerName=people.find(person=>String(person.id)===String(activeTrip.owner_id))?.name||activeTrip.owner_name||'Trip organizer';
+    $('#trip-info-content').innerHTML=`<div class="trip-info-facts"><div><small>Trip name</small><strong>${safe(activeTrip.destination||'Untitled trip')}</strong></div><div><small>Organized by</small><strong>${safe(ownerName)}</strong></div><div><small>Dates</small><strong>${safe(dateCopy)}</strong></div><div><small>Countdown</small><strong>${safe(countdown)}</strong></div><div><small>Planned days</small><strong>${(activeTrip.days||[]).length}</strong></div><div><small>Members</small><strong>${people.filter(person=>!person.left).length}</strong></div><div><small>Invite code</small><strong>${safe(activeTrip.invite_code||activeTrip.id)}</strong></div></div>`;
+    openModal('trip-info-modal');
+  }
+}
+async function leaveCurrentTrip(){
+  if(!activeTrip||!currentUser||!isTripMember)return;
+  try{
+    const tripId=activeTrip.id;
+    if(useSupabase){const {error}=await supabase.rpc('leave_trip',{p_trip_id:tripId});if(error)throw error}
+    else {const members=workspaceData().departed_members||[];members.push({user_id:String(currentUser.id),name:discordUsername()||currentForumAuthor(),left_at:new Date().toISOString()});workspaceData().departed_members=members}
+    closeModal('leave-trip-modal');clearActiveTrip();tripPeopleCache=[];switchView('trips',{force:true});syncAccessGate();await refreshTripSwitcher();showToast('You left the trip. Your budget history was retained.','success');
+  }catch(error){console.error('Could not leave trip.',error);alert(error.message||'Could not leave this trip. Please try again.')}
 }
 
 function createTripFromSwitcher() {
@@ -194,6 +224,12 @@ async function refreshTripSwitcher() {
     ? trips.map(trip => `<button type="button" class="trip-switcher-option${String(trip.id) === currentId ? ' is-selected' : ''}" data-trip-select="${safe(trip.id)}"><span class="trip-avatar">${safe(tripInitials(trip))}</span><span>${safe(trip.destination || 'Untitled trip')}</span>${String(trip.id) === currentId ? '<span class="selected-check">✓</span>' : ''}</button>`).join('')
     : '<p class="trip-switcher-empty">No trips yet.</p>';
   ['#trip-switcher-options', '#desktop-trip-switcher-options'].forEach(selector => { const options = $(selector); if (options) options.innerHTML = optionMarkup; });
+  const owner=!!(currentUser&&activeTrip&&String(activeTrip.owner_id)===String(currentUser.id));
+  document.querySelectorAll('[data-trip-action="info"]').forEach(button=>button.classList.toggle('hidden',!activeTrip));
+  document.querySelectorAll('[data-trip-action="invite"]').forEach(button=>button.classList.toggle('hidden',!owner));
+  document.querySelectorAll('[data-trip-action="settings"]').forEach(button=>button.classList.toggle('hidden',!isTripMember||activeUserRole==='viewer'));
+  document.querySelectorAll('[data-trip-action="leave"]').forEach(button=>button.classList.toggle('hidden',!isTripMember));
+  document.querySelectorAll('.workspace-trip-switcher').forEach(button=>{button.disabled=!activeTrip;button.setAttribute('aria-disabled',String(!activeTrip))});
 }
 
 async function selectTrip(id) {
@@ -438,13 +474,15 @@ function filterTrips(){const q=($('#trip-search-input')?.value||'').trim().toLow
 let selectedRecipeCooks = new Set();
 let recipeDraftItems = [];
 let selectedRecipeId = null;
+let expandedIngredientIds = new Set();
+let selectedIngredientCategories = new Set();
 
 function mountPlanFood() {
   const view = $('#food-view'); if (!view) return;
   view.innerHTML = `<header class="plan-page-head food-page-head"><div><h1>Food</h1><p>Manage ingredients, recipes, and meal assignments.</p></div><button type="button" id="open-grocery-list" class="light-button">Grocery list <span id="grocery-badge">0</span></button></header>
-    <div id="food-browser-screen" class="food-workspace"><aside class="ingredient-registry"><div class="panel-heading"><div><h2>Ingredients</h2><p>Per-unit nutrition, cost, and store details.</p></div><div class="ingredient-heading-actions"><button type="button" id="import-ingredients-btn" class="light-button">Import CSV</button><button type="button" id="add-ingredient" class="action-button">＋ Add</button><input type="file" id="ingredients-csv-file" accept=".csv,text/csv" class="hidden" aria-label="Import ingredients CSV"></div></div><p id="ingredient-import-status" class="ingredient-import-status hidden" role="status"></p><div id="ingredients-list"></div></aside><section class="recipe-browser"><div class="panel-heading recipe-browser-heading"><div><h2>Recipes</h2><p>Browse and build the trip menu.</p></div><button type="button" id="add-recipe" class="action-button">＋ New recipe</button></div><label class="recipe-search"><span>⌕</span><input type="search" id="recipe-search-input" placeholder="Search recipes…"></label><div id="recipes-list" class="recipe-grid"></div></section></div>
+    <div id="food-browser-screen" class="food-workspace"><aside class="ingredient-registry"><div class="panel-heading"><div><h2>Ingredients</h2><p>Per-unit nutrition, cost, and store details.</p></div><div class="ingredient-heading-actions"><button type="button" id="import-ingredients-btn" class="light-button">Import CSV</button><button type="button" id="add-ingredient" class="action-button">＋ Add</button><input type="file" id="ingredients-csv-file" accept=".csv,text/csv" class="hidden" aria-label="Import ingredients CSV"></div></div><p id="ingredient-import-status" class="ingredient-import-status hidden" role="status"></p><div class="ingredient-toolbar"><label class="ingredient-search"><span>⌕</span><input type="search" id="ingredient-search-input" placeholder="Search ingredients…" aria-label="Search ingredients"></label><div class="ingredient-filter-wrap"><button type="button" id="ingredient-filter-button" class="ingredient-filter-button" aria-haspopup="true" aria-expanded="false">Category <span id="ingredient-filter-count"></span><span aria-hidden="true">⌄</span></button><div id="ingredient-filter-menu" class="ingredient-filter-menu hidden" role="group" aria-label="Filter ingredients by category"></div></div></div><div id="ingredients-list"></div></aside><section class="recipe-browser"><div class="panel-heading recipe-browser-heading"><div><h2>Recipes</h2><p>Browse and build the trip menu.</p></div><button type="button" id="add-recipe" class="action-button">＋ New recipe</button></div><label class="recipe-search"><span>⌕</span><input type="search" id="recipe-search-input" placeholder="Search recipes…"></label><div id="recipes-list" class="recipe-grid"></div></section></div>
     <section id="food-detail-screen" class="food-detail-screen hidden"><button type="button" id="back-to-recipes" class="forum-back-button">← All recipes</button><div id="recipe-detail"></div></section>
-    <section id="grocery-list-screen" class="grocery-list-screen hidden"><header class="plan-page-head"><div><h1>Grocery list</h1><p>Quantities and package estimates across all recipes.</p></div><div class="plan-page-actions"><button type="button" id="back-to-food" class="light-button">← Food</button><button type="button" id="copy-groceries" class="action-button">Copy list</button></div></header><div class="pretty-card grocery-table-wrap"><table class="grocery-table"><thead><tr><th>Ingredient</th><th>Total needed</th><th>Packages</th><th>Estimated cost</th></tr></thead><tbody id="grocery-items"></tbody></table><div id="grocery-empty" class="empty-note hidden">Add ingredients to recipes to build this list.</div></div></section>
+    <section id="grocery-list-screen" class="grocery-list-screen hidden"><header class="plan-page-head"><div><h1>Grocery list</h1><p>Quantities and package estimates across all recipes.</p></div><div class="plan-page-actions"><button type="button" id="back-to-food" class="light-button">← Food</button></div></header><div class="pretty-card grocery-table-wrap"><table class="grocery-table"><colgroup><col class="grocery-col-ingredient"><col class="grocery-col-needed"><col class="grocery-col-purchased"><col class="grocery-col-cost"></colgroup><thead><tr><th>Ingredient</th><th>Needed</th><th>Purchased</th><th>Estimated cost</th></tr></thead><tbody id="grocery-items"></tbody></table><div id="grocery-empty" class="empty-note hidden">Add ingredients to recipes to build this list.</div></div></section>
     <div id="ingredient-modal" class="lakbay-modal-backdrop hidden" data-close-modal><form class="lakbay-modal ingredient-dialog" id="ingredient-form" role="dialog" aria-modal="true" aria-labelledby="ingredient-modal-title"><button type="button" class="modal-x" data-dismiss-modal aria-label="Close">×</button><h2 id="ingredient-modal-title">Add an ingredient</h2><p>Nutrition and reference cost are recorded per unit.</p><label>Ingredient name<input name="name" required maxlength="100" placeholder="e.g. Jasmine rice"></label><div class="two-fields"><label>Unit<input name="unit" list="ingredient-unit-options" required maxlength="24" placeholder="g"><datalist id="ingredient-unit-options"><option value="g"><option value="kg"><option value="mL"><option value="L"><option value="piece"><option value="pc"><option value="bundle"><option value="bag"><option value="pack"></datalist></label><label>Reference cost per <span class="ingredient-unit-copy">unit</span><input name="unitCost" type="number" min="0" step="any" placeholder="0.00"></label></div><div class="two-fields"><label>Store quantity <span class="optional-label">Optional</span><input name="size" type="number" min="0.001" step="any" placeholder="e.g. 1000"></label><label>Store price <span class="optional-label">Optional</span><input name="cost" type="number" min="0" step="any" placeholder="0.00"></label></div><details class="ingredient-nutrition-fields"><summary>Nutrition per <span class="ingredient-unit-copy">unit</span> <span class="optional-label">Optional</span></summary><div class="two-fields"><label>Calories<input name="calories" type="number" min="0" step="any" placeholder="kcal"></label><label>Carbohydrates<input name="carbs" type="number" min="0" step="any" placeholder="g"></label><label>Protein<input name="protein" type="number" min="0" step="any" placeholder="g"></label><label>Fat<input name="fat" type="number" min="0" step="any" placeholder="g"></label></div></details><div class="two-fields"><label>Category <span class="optional-label">Optional</span><input name="category" maxlength="80" placeholder="e.g. Vegetables"></label><label>Subcategory <span class="optional-label">Optional</span><input name="subcategory" maxlength="80" placeholder="e.g. Root vegetables"></label></div><label>Source <span class="optional-label">Optional</span><input name="source" maxlength="160" placeholder="Store or product source"></label><label>Notes <span class="optional-label">Optional</span><textarea name="notes" rows="3" placeholder="Brand, substitutions, or other notes"></textarea></label><div class="ingredient-scaling-note">Store price and quantity determine the cost per unit when both are provided. Otherwise, the reference cost is multiplied by recipe quantities.</div><div class="modal-actions"><button type="button" class="light-button" data-dismiss-modal>Cancel</button><button type="submit" class="action-button">Save ingredient</button></div><button type="button" id="delete-ingredient-modal" class="payment-modal-delete hidden">Delete ingredient</button></form></div>
     <div id="recipe-modal" class="lakbay-modal-backdrop hidden" data-close-modal><form class="lakbay-modal recipe-dialog" id="recipe-form" role="dialog" aria-modal="true" aria-labelledby="recipe-modal-title"><button type="button" class="modal-x" data-dismiss-modal aria-label="Close">×</button><h2 id="recipe-modal-title">Create a recipe</h2><p>Add ingredients and assign optional cooks.</p><label>Recipe title<input name="name" required maxlength="120" placeholder="e.g. Shoyu ramen"></label><label>Description <span class="optional-label">Optional</span><textarea name="description" rows="3" maxlength="1000" placeholder="Describe the dish"></textarea></label><label>Image URL <span class="optional-label">Optional</span><input name="image" type="url" placeholder="https://…"></label><label>Assign cooks <span class="optional-label">Optional</span><input id="recipe-cook-search" type="search" placeholder="Search trip members"></label><div id="recipe-cook-selection" class="recipe-cook-selection"></div><div id="recipe-cook-options" class="group-member-options"></div><div class="recipe-ingredient-builder"><h3>Ingredients</h3><div class="recipe-add-line"><select id="recipe-add-ingredient" aria-label="Choose an ingredient"></select><input id="recipe-add-quantity" type="number" min="0.001" step="any" placeholder="Quantity" aria-label="Quantity"><button type="button" id="recipe-add-line" class="light-button">Add</button></div><div id="recipe-draft-items"></div><div class="recipe-cost-total">Recipe total <strong id="recipe-total-cost">₱0.00</strong></div></div><div class="modal-actions"><button type="button" class="light-button" data-dismiss-modal>Cancel</button><button type="submit" class="action-button">Save recipe</button></div><button type="button" id="delete-recipe-modal" class="payment-modal-delete hidden">Delete recipe</button></form></div>`;
 
@@ -454,6 +492,10 @@ function mountPlanFood() {
   $('#back-to-food').onclick = () => showFoodScreen('browse');
   $('#back-to-recipes').onclick = () => { selectedRecipeId = null; showFoodScreen('browse'); };
   $('#recipe-search-input').addEventListener('input', renderRecipes);
+  $('#ingredient-search-input').addEventListener('input', renderIngredients);
+  $('#ingredient-filter-button').addEventListener('click',event=>{const menu=$('#ingredient-filter-menu'),open=menu.classList.contains('hidden');menu.classList.toggle('hidden',!open);event.currentTarget.setAttribute('aria-expanded',String(open))});
+  $('#ingredient-filter-menu').addEventListener('change',event=>{const checkbox=event.target.closest('[data-ingredient-category]');if(!checkbox)return;const category=checkbox.value;if(checkbox.checked)selectedIngredientCategories.add(category);else selectedIngredientCategories.delete(category);renderIngredientCategories(foodData().ingredients);renderIngredients()});
+  document.addEventListener('click',event=>{const wrap=event.target.closest('.ingredient-filter-wrap');if(wrap)return;$('#ingredient-filter-menu')?.classList.add('hidden');$('#ingredient-filter-button')?.setAttribute('aria-expanded','false')});
   $('#ingredients-list').addEventListener('click', handleIngredientListClick);
   $('#recipes-list').addEventListener('click', handleRecipeListClick);
   $('#recipe-detail').addEventListener('click', event => {
@@ -482,14 +524,14 @@ function mountPlanFood() {
     const index = Number(quantity.dataset.recipeLineQty), value = Number(quantity.value);
     if (value > 0 && recipeDraftItems[index]) { recipeDraftItems[index].qty = value; recipeDraftItems[index].cost = value * Number(recipeDraftItems[index].unitCost || 0); renderRecipeDraftItems(); }
   });
-  $('#copy-groceries').onclick = copyGroceries;
+  ensureShoppingTripUI();
   renderFood();
 }
 
 function foodData() {
   try {
     const stored = readTripData('food', JSON.parse(localStorage.getItem(key('food')) || '{"ingredients":[],"recipes":[]}'));
-    const data = { ingredients: Array.isArray(stored?.ingredients) ? stored.ingredients : [], recipes: Array.isArray(stored?.recipes) ? stored.recipes : [] };
+    const data = { ingredients: Array.isArray(stored?.ingredients) ? stored.ingredients : [], recipes: Array.isArray(stored?.recipes) ? stored.recipes : [], shoppingTrips: Array.isArray(stored?.shoppingTrips) ? stored.shoppingTrips : [] };
     data.ingredients.forEach((ingredient, index) => { if (!ingredient.id) ingredient.id = `ingredient-${index}-${String(ingredient.name || 'item').toLocaleLowerCase().replace(/[^a-z0-9]+/g, '-')}`; });
     data.recipes.forEach((recipe, index) => { if (!recipe.id) recipe.id = `recipe-${index}-${String(recipe.name || 'dish').toLocaleLowerCase().replace(/[^a-z0-9]+/g, '-')}`; });
     return data;
@@ -638,6 +680,7 @@ function showFoodScreen(screen) {
   $('#food-browser-screen').classList.toggle('hidden', screen !== 'browse');
   $('#food-detail-screen').classList.toggle('hidden', screen !== 'detail');
   $('#grocery-list-screen').classList.toggle('hidden', screen !== 'groceries');
+  $('.food-page-head')?.classList.toggle('hidden',screen==='groceries');
   if (screen === 'groceries') renderGroceryList();
   else if (screen === 'browse') renderRecipes();
 }
@@ -647,19 +690,40 @@ function renderFood() {
   const canEdit = activeUserRole !== 'viewer';
   $('#add-ingredient').classList.toggle('hidden', !canEdit); $('#add-recipe').classList.toggle('hidden', !canEdit);
   $('#import-ingredients-btn').classList.toggle('hidden', !canEdit);
-  $('#ingredients-list').innerHTML = data.ingredients.length ? data.ingredients.map(ingredient => {
-    const size = packageSize(ingredient), unit = ingredient.unit || 'pcs', unitCost = ingredientUnitCost(ingredient), packEstimate = ingredientPackageEstimate(ingredient), nutrition = ingredientNutrition(ingredient);
-    const hasNutrition = Object.values(nutrition).some(value => value !== 0);
-    const category = [ingredient.category, ingredient.subcategory].filter(Boolean).join(' · ');
-    const packageCopy = size ? `${size} ${safe(unit)} store quantity` : `Per ${safe(unit)}`;
-    const priceCopy = size ? `${money(packEstimate)} per store quantity` : `${unitMoney(unitCost)} per ${safe(unit)}`;
-    const nutritionCopy = hasNutrition ? `${nutrition.calories} kcal · C ${nutrition.carbs} g · P ${nutrition.protein} g · F ${nutrition.fat} g` : '';
-    const packageNutrition = size && hasNutrition ? `Store quantity: ${(nutrition.calories * size).toFixed(1)} kcal · C ${(nutrition.carbs * size).toFixed(1)} g · P ${(nutrition.protein * size).toFixed(1)} g · F ${(nutrition.fat * size).toFixed(1)} g` : '';
-    return `<article class="ingredient-card"><div class="ingredient-card-top"><span class="ingredient-symbol">◈</span><div><h3>${safe(ingredient.name)}</h3><small>${packageCopy}${category ? ` · ${safe(category)}` : ''}</small></div></div><div class="ingredient-price"><strong>${priceCopy}</strong>${size ? `<small>${unitMoney(unitCost)} per ${safe(unit)}</small>` : ''}</div>${nutritionCopy ? `<p class="ingredient-nutrition-copy">Per ${safe(unit)}: ${nutritionCopy}</p>${packageNutrition ? `<p class="ingredient-package-nutrition">${packageNutrition}</p>` : ''}` : ''}${ingredient.source || ingredient.notes ? `<details class="ingredient-notes"><summary>Source and notes</summary>${ingredient.source ? `<p><b>Source</b> ${safe(ingredient.source)}</p>` : ''}${ingredient.notes ? `<p>${safe(ingredient.notes)}</p>` : ''}</details>` : ''}${canEdit ? `<div class="ingredient-card-actions"><button type="button" class="light-button" data-edit-ingredient="${safe(ingredient.id)}">Edit</button><button type="button" class="text-link" data-delete-ingredient="${safe(ingredient.id)}">Delete</button></div>` : ''}</article>`;
-  }).join('') : '<div class="empty-note">The ingredient registry is empty.</div>';
+  renderIngredientCategories(data.ingredients);
+  renderIngredients();
   renderRecipes(); renderGroceryList();
   if (activeTrip && !tripPeopleCache.length && (!useSupabase || currentUser)) void loadTripPeople().then(() => renderFood());
   if (selectedRecipeId && !$('#food-detail-screen').classList.contains('hidden')) renderRecipeDetail(selectedRecipeId);
+}
+function ingredientCategoryName(ingredient){return String(ingredient.category||'').trim()||'Uncategorized'}
+function renderIngredientCategories(ingredients){
+  const menu=$('#ingredient-filter-menu');if(!menu)return;
+  const categories=[...new Set(ingredients.map(ingredientCategoryName))].sort((a,b)=>a.localeCompare(b,undefined,{sensitivity:'base'}));
+  for(const category of [...selectedIngredientCategories])if(!categories.includes(category))selectedIngredientCategories.delete(category);
+  menu.innerHTML=categories.length?categories.map(category=>`<label class="ingredient-filter-option"><input type="checkbox" data-ingredient-category value="${safe(category)}" ${selectedIngredientCategories.has(category)?'checked':''}><span>${safe(category)}</span></label>`).join(''):'<div class="ingredient-filter-empty">No categories</div>';
+  const button=$('#ingredient-filter-button'),count=$('#ingredient-filter-count');
+  count.textContent=selectedIngredientCategories.size?`(${selectedIngredientCategories.size})`:'';
+  button.classList.toggle('is-active',selectedIngredientCategories.size>0);
+}
+function renderIngredients(){
+  const host=$('#ingredients-list');if(!host)return;
+  const data=foodData(),query=($('#ingredient-search-input')?.value||'').trim().toLocaleLowerCase();
+  const ingredients=data.ingredients.filter(ingredient=>{
+    const category=ingredientCategoryName(ingredient),matchesCategory=!selectedIngredientCategories.size||selectedIngredientCategories.has(category);
+    const text=[ingredient.name,ingredient.category,ingredient.subcategory,ingredient.notes,ingredient.source].join(' ').toLocaleLowerCase();
+    return matchesCategory&&(!query||text.includes(query));
+  }).sort((a,b)=>ingredientCategoryName(a).localeCompare(ingredientCategoryName(b),undefined,{sensitivity:'base'})||String(a.name||'').localeCompare(String(b.name||''),undefined,{sensitivity:'base'}));
+  if(!ingredients.length){host.innerHTML=data.ingredients.length?'<div class="empty-note ingredient-empty">No matching ingredients.</div>':'<div class="empty-note ingredient-empty">The ingredient registry is empty.</div>';return}
+  const canEdit=activeUserRole!=='viewer';
+  const groups=new Map();ingredients.forEach(ingredient=>{const category=ingredientCategoryName(ingredient);if(!groups.has(category))groups.set(category,[]);groups.get(category).push(ingredient)});
+  host.innerHTML=[...groups.entries()].map(([category,items])=>`<section class="ingredient-category-group"><h3 class="ingredient-category-heading">${safe(category)}</h3>${items.map(ingredient=>{
+    const id=String(ingredient.id),expanded=expandedIngredientIds.has(id),size=packageSize(ingredient),unit=ingredient.unit||'pcs',unitCost=ingredientUnitCost(ingredient),nutrition=ingredientNutrition(ingredient),hasNutrition=Object.values(nutrition).some(value=>value!==0);
+    const subcategory=String(ingredient.subcategory||'').trim(),categoryCopy=subcategory?`${category} · ${subcategory}`:category;
+    const nutritionCopy=hasNutrition?`${nutrition.calories} kcal · Carbohydrates ${nutrition.carbs} g · Protein ${nutrition.protein} g · Fat ${nutrition.fat} g`:'';
+    const packageNutrition=size&&hasNutrition?`Store quantity: ${(nutrition.calories*size).toFixed(1)} kcal · Carbohydrates ${(nutrition.carbs*size).toFixed(1)} g · Protein ${(nutrition.protein*size).toFixed(1)} g · Fat ${(nutrition.fat*size).toFixed(1)} g`:'';
+    return `<article class="ingredient-card${expanded?' is-expanded':''}" data-ingredient-id="${safe(id)}"><button type="button" class="ingredient-row-trigger" data-toggle-ingredient="${safe(id)}" aria-expanded="${expanded}"><span class="ingredient-row-copy"><strong>${safe(ingredient.name||'Ingredient')}</strong><small>${safe(categoryCopy)}</small></span><strong class="ingredient-row-price">${unitMoney(unitCost)} <small>/ ${safe(unit)}</small></strong></button><div class="ingredient-expanded-details${expanded?'':' hidden'}">${size?`<p><strong>Store package</strong><span>${safe(size)} ${safe(unit)} · ${money(ingredientPackageEstimate(ingredient))}</span></p>`:''}${hasNutrition?`<p><strong>Nutrition per ${safe(unit)}</strong><span>${nutritionCopy}</span></p>${packageNutrition?`<p><strong>Nutrition per package</strong><span>${packageNutrition}</span></p>`:''}`:''}${ingredient.source?`<p><strong>Source</strong><span>${safe(ingredient.source)}</span></p>`:''}${ingredient.notes?`<p><strong>Notes</strong><span>${safe(ingredient.notes)}</span></p>`:''}${!size&&!hasNutrition&&!ingredient.source&&!ingredient.notes?'<p class="ingredient-detail-empty">No additional details.</p>':''}${canEdit?`<div class="ingredient-card-actions"><button type="button" class="light-button" data-edit-ingredient="${safe(id)}">Edit</button><button type="button" class="text-link" data-delete-ingredient="${safe(id)}">Delete</button></div>`:''}</div></article>`;
+  }).join('')}</section>`).join('');
 }
 function renderRecipes() {
   const host = $('#recipes-list'); if (!host) return;
@@ -684,8 +748,9 @@ function renderRecipeDetail(id) {
 }
 function handleIngredientListClick(event) {
   const edit = event.target.closest('[data-edit-ingredient]'), remove = event.target.closest('[data-delete-ingredient]');
-  if (edit) openIngredientModal(edit.dataset.editIngredient);
-  if (remove) deleteIngredient(remove.dataset.deleteIngredient);
+  if (edit) {event.stopPropagation();openIngredientModal(edit.dataset.editIngredient);return}
+  if (remove) {event.stopPropagation();deleteIngredient(remove.dataset.deleteIngredient);return}
+  const toggle=event.target.closest('[data-toggle-ingredient]');if(toggle){const id=String(toggle.dataset.toggleIngredient);if(expandedIngredientIds.has(id))expandedIngredientIds.delete(id);else expandedIngredientIds.add(id);renderIngredients()}
 }
 function handleRecipeListClick(event) {
   const edit = event.target.closest('[data-edit-recipe]'), open = event.target.closest('[data-open-recipe]');
@@ -782,22 +847,111 @@ function aggregateGroceries(data = foodData()) {
   data.recipes.forEach(recipe => (recipe.items || []).forEach(item => {
     const registered = ingredientById(data, item), name = registered?.name || item.name || 'Ingredient', unit = registered?.unit || item.unit || 'pcs';
     const key = `${registered?.id || name.toLocaleLowerCase()}|${unit}`;
-    const aggregate = totals.get(key) || { name, unit, quantity: 0, packageSize: registered ? packageSize(registered) : Number(item.package_size || 0), packageCost: registered ? ingredientPackageEstimate(registered) : Number(item.package_cost || 0), cost: 0 };
+    const aggregate = totals.get(key) || { id:String(registered?.id||key), name, unit, quantity: 0, unitCost:registered?ingredientUnitCost(registered):Number(item.unitCost||0), packageSize: registered ? packageSize(registered) : Number(item.package_size || 0), packageCost: registered ? ingredientPackageEstimate(registered) : Number(item.package_cost || 0), cost: 0 };
     aggregate.quantity += Number(item.qty) || 0;
     aggregate.packageSize ||= registered ? packageSize(registered) : Number(item.package_size || 0);
     aggregate.packageCost ||= registered ? ingredientPackageEstimate(registered) : Number(item.package_cost || 0);
     aggregate.cost += recipeLineCost(item, data);
     totals.set(key, aggregate);
   }));
-  return [...totals.values()].sort((a, b) => a.name.localeCompare(b.name));
+  const purchased=foodData().shoppingTrips||[];
+  return [...totals.values()].map(item=>{
+    const quantity=purchased.flatMap(trip=>trip.items||[]).filter(line=>!line.custom&&(String(line.ingredient_id||line.name?.toLocaleLowerCase())===String(item.id)||(!line.ingredient_id&&String(line.name||'').toLocaleLowerCase()===item.name.toLocaleLowerCase()&&String(line.unit||'')===String(item.unit)))).reduce((sum,line)=>sum+Number(line.quantity||0),0);
+    const remaining=Math.max(0,item.quantity-quantity),estimatedCost=item.packageSize>0&&item.packageCost>0?Math.ceil(item.quantity/item.packageSize)*item.packageCost:item.cost,remainingCost=item.packageSize>0&&item.packageCost>0?Math.ceil(remaining/item.packageSize)*item.packageCost:remaining*item.unitCost;
+    return {...item,purchasedQuantity:Math.min(item.quantity,quantity),remaining,estimatedCost,remainingCost};
+  }).sort((a,b)=>(a.remaining<=.000001)-(b.remaining<=.000001)||a.name.localeCompare(b.name,undefined,{sensitivity:'base'}));
+}
+function ensureShoppingTripUI(){
+  const screen=$('#grocery-list-screen');if(!screen||$('#shopping-trip-modal'))return;
+  $('#back-to-food')?.insertAdjacentHTML('afterend','<button type="button" id="log-shopping-trip" class="action-button">＋ Log shopping trip</button>');
+  const table=screen.querySelector('.grocery-table-wrap');
+  table?.insertAdjacentHTML('afterbegin','<div class="grocery-cost-summary"><div><small>Total estimated cost</small><strong id="grocery-estimated-total">₱0.00</strong></div><div><small>Remaining estimate</small><strong id="grocery-remaining-total">₱0.00</strong></div></div>');
+  table?.insertAdjacentHTML('afterend','<section class="pretty-card shopping-history-section"><div class="shopping-history-heading"><h2>Shopping trips</h2><span id="shopping-trip-count">0</span></div><div id="shopping-trip-history"></div></section>');
+  screen.insertAdjacentHTML('beforeend',`<div id="shopping-trip-modal" class="lakbay-modal-backdrop hidden" data-close-modal><form class="lakbay-modal shopping-trip-dialog" id="shopping-trip-form" role="dialog" aria-modal="true" aria-labelledby="shopping-trip-title"><button type="button" class="modal-x" data-dismiss-modal aria-label="Close">×</button><h2 id="shopping-trip-title">Log a shopping trip</h2><p>Record store purchases and how the bill was paid. Linked grocery quantities update automatically.</p><label>Store or location<input name="location" required maxlength="120" placeholder="e.g. SM Supermarket"></label><fieldset class="shopping-payers"><legend>Paid by</legend><div id="shopping-payer-options"></div><button type="button" class="light-button shopping-add-payer" id="add-shopping-payer">＋ Add another person</button><div class="shopping-payer-summary"><small id="shopping-payer-total">Allocated: ₱0.00 of ₱0.00</small><button type="button" class="light-button" id="split-shopping-payment">Split evenly</button></div><p id="shopping-payment-error" class="shopping-payment-error hidden" role="status" aria-live="polite"></p></fieldset><div class="shopping-purchase-heading"><h3>Recipe ingredients</h3><small>Choose ingredients and enter purchased quantities and actual prices.</small></div><div id="shopping-purchase-items"></div><div class="shopping-custom-heading"><h3>Other purchases</h3><button type="button" class="light-button" id="add-custom-purchase">＋ Add item</button></div><div id="shopping-custom-items"></div><div class="shopping-purchase-total"><span>Actual trip total</span><strong id="shopping-purchase-total">₱0.00</strong></div><div class="modal-actions"><button type="button" class="light-button" data-dismiss-modal>Cancel</button><button type="submit" class="action-button" id="save-shopping-trip">Save shopping trip</button></div></form></div>`);
+  $('#log-shopping-trip').onclick=()=>{void openShoppingTripModal()};
+  $('#shopping-trip-form').addEventListener('submit',saveShoppingTrip);
+  $('#shopping-payer-options').addEventListener('change',event=>{if(event.target.matches('[name="buyer"]'))syncShoppingPayerOptions();updateShoppingTotal()});
+  $('#shopping-payer-options').addEventListener('input',event=>{if(event.target.matches('[name="buyer-amount"]')){event.target.dataset.auto='false';updateShoppingTotal()}});
+  $('#shopping-payer-options').addEventListener('click',event=>{if(event.target.closest('[data-remove-shopping-payer]')){event.target.closest('.shopping-payer-row')?.remove();syncShoppingPayerOptions();updateShoppingTotal()}});
+  $('#add-shopping-payer').addEventListener('click',()=>{addShoppingPayerRow();syncShoppingPayerOptions();updateShoppingTotal()});
+  $('#shopping-purchase-items').addEventListener('input',updateShoppingTotal);
+  $('#shopping-purchase-items').addEventListener('change',updateShoppingTotal);
+  $('#shopping-custom-items').addEventListener('input',updateShoppingTotal);
+  $('#shopping-custom-items').addEventListener('click',event=>{if(event.target.closest('[data-remove-custom-purchase]')){event.target.closest('.shopping-custom-row')?.remove();updateShoppingTotal()}});
+  $('#add-custom-purchase').addEventListener('click',()=>{addCustomPurchaseRow();updateShoppingTotal()});
+  $('#split-shopping-payment').addEventListener('click',()=>{splitShoppingPayment(true);updateShoppingTotal()});
 }
 function renderGroceryList() {
+  ensureShoppingTripUI();
   const list = aggregateGroceries(), body = $('#grocery-items'); if (!body) return;
+  const logButton=$('#log-shopping-trip');if(logButton){logButton.classList.toggle('hidden',activeUserRole==='viewer');logButton.disabled=activeUserRole==='viewer'}
   $('#grocery-badge').textContent = String(list.length);
   $('#grocery-empty').classList.toggle('hidden', !!list.length);
-  body.innerHTML = list.map(item => { const packs = item.packageSize ? Math.ceil(item.quantity / item.packageSize) : 0, estimated = packs && item.packageCost ? packs * item.packageCost : item.cost; return `<tr><td><strong>${safe(item.name)}</strong></td><td>${item.quantity} ${safe(item.unit)}</td><td>${packs ? `${packs} × ${item.packageSize} ${safe(item.unit)}` : '—'}</td><td>${money(estimated)}</td></tr>`; }).join('');
+  const header=body.closest('table')?.querySelector('thead');if(header)header.innerHTML='<tr><th>Ingredient</th><th>Needed</th><th>Purchased</th><th>Estimated cost</th></tr>';
+  body.innerHTML = list.map(item => `<tr class="grocery-item-row${item.remaining<=.000001?' is-purchased':''}"><td><strong>${safe(item.name)}</strong></td><td>${formatQuantity(item.quantity)} ${safe(item.unit)}</td><td>${formatQuantity(item.purchasedQuantity)}/${formatQuantity(item.quantity)} ${safe(item.unit)}</td><td>${money(item.estimatedCost)}</td></tr>`).join('');
+  $('#grocery-estimated-total').textContent=money(list.reduce((sum,item)=>sum+item.estimatedCost,0));
+  $('#grocery-remaining-total').textContent=money(list.reduce((sum,item)=>sum+item.remainingCost,0));
+  const history=foodData().shoppingTrips||[];
+  $('#shopping-trip-count').textContent=String(history.length);
+  $('#shopping-trip-history').innerHTML=history.length?[...history].reverse().map(trip=>{const payers=trip.buyers?.length?trip.buyers.map(payer=>`${safe(payer.name)} · ${money(payer.amount)}`).join(', '):(trip.buyer_names||[]).map(safe).join(', ')||'No payer listed';return `<article class="shopping-history-card"><div class="shopping-history-card-head"><div><strong>${safe(trip.location||'Shopping trip')}</strong><small>${trip.date?new Date(trip.date).toLocaleString():''} · Paid by ${payers}</small></div><b>${money(trip.total||0)}</b></div><ul>${(trip.items||[]).map(item=>`<li>${safe(item.name)} <span>${formatQuantity(item.quantity)} ${safe(item.unit)} · ${money(item.amount)}</span></li>`).join('')}</ul></article>`}).join(''):'<div class="empty-note">No shopping trips recorded.</div>';
 }
-function copyGroceries() { const list = aggregateGroceries(); navigator.clipboard?.writeText(list.map(item => { const packs = item.packageSize ? Math.ceil(item.quantity / item.packageSize) : 0; return `[ ] ${item.name} — ${item.quantity} ${item.unit}${packs ? ` (${packs} packs)` : ''}`; }).join('\n')); }
+function formatQuantity(value){return Number(value||0).toLocaleString('en-PH',{maximumFractionDigits:3})}
+async function openShoppingTripModal(){
+  if(activeUserRole==='viewer')return alert('Only trip members can log shopping trips.');
+  await loadTripPeople();const people=tripPeople().filter(person=>!person.left),list=aggregateGroceries().filter(item=>item.remaining>0);
+  $('#shopping-payer-options').innerHTML='';
+  addShoppingPayerRow(people,String(currentUser?.id||''),false);
+  $('#shopping-purchase-items').innerHTML=list.length?list.map(item=>`<div class="shopping-purchase-row"><input type="checkbox" name="purchase-item" value="${safe(item.id)}"><span class="shopping-purchase-name"><strong>${safe(item.name)}</strong><small>${formatQuantity(item.remaining)} ${safe(item.unit)} remaining</small></span><input type="number" name="purchase-quantity" min="0.001" step="any" max="${item.remaining}" value="${item.remaining}" aria-label="Quantity purchased for ${safe(item.name)}" disabled><input type="number" name="purchase-amount" min="0" step="0.01" placeholder="Actual price" aria-label="Actual total price for ${safe(item.name)}" disabled></div>`).join(''):'<div class="shopping-section-empty">No recipe ingredients remain. Add any other purchase below.</div>';
+  $('#shopping-custom-items').innerHTML='';
+  $('#shopping-trip-form').reset();
+  const defaultPayer=$('#shopping-payer-options select[name="buyer"]');if(defaultPayer)defaultPayer.value=String(currentUser?.id||'');
+  syncShoppingPayerOptions();
+  updateShoppingTotal();
+  openModal('shopping-trip-modal');
+}
+function addShoppingPayerRow(people=tripPeople().filter(person=>!person.left),selectedId='',removable=true){
+  const id=`payer-${crypto.randomUUID()}`,options=people.map(person=>`<option value="${safe(person.id)}"${String(person.id)===String(selectedId)?' selected':''}>${safe(person.name)}</option>`).join('');
+  $('#shopping-payer-options').insertAdjacentHTML('beforeend',`<div class="shopping-payer-row" data-shopping-payer="${safe(id)}"><select name="buyer" aria-label="Person who paid" required><option value="">Select a person</option>${options}</select><input type="number" name="buyer-amount" min="0" step="0.01" value="0.00" aria-label="Amount paid" disabled data-auto="true">${removable?`<button type="button" data-remove-shopping-payer="${safe(id)}" aria-label="Remove payer">×</button>`:'<span class="shopping-payer-spacer" aria-hidden="true"></span>'}</div>`);
+}
+function syncShoppingPayerOptions(){
+  const rows=[...$('#shopping-payer-options').querySelectorAll('.shopping-payer-row')];
+  rows.forEach(row=>{const select=row.querySelector('[name="buyer"]'),used=new Set(rows.filter(other=>other!==row).map(other=>other.querySelector('[name="buyer"]').value).filter(Boolean));select.querySelectorAll('option').forEach(option=>{if(option.value)option.disabled=used.has(option.value)})});
+}
+function addCustomPurchaseRow(){
+  const host=$('#shopping-custom-items'),id=`custom-${crypto.randomUUID()}`;
+  host.insertAdjacentHTML('beforeend',`<div class="shopping-custom-row" data-custom-purchase="${safe(id)}"><input type="text" name="custom-name" maxlength="120" placeholder="Item name" aria-label="Custom item name"><input type="number" name="custom-quantity" min="0.001" step="any" placeholder="Qty" aria-label="Custom item quantity"><input type="text" name="custom-unit" maxlength="24" placeholder="Unit" aria-label="Custom item unit"><input type="number" name="custom-amount" min="0" step="0.01" placeholder="Actual price" aria-label="Custom item price"><button type="button" data-remove-custom-purchase="${safe(id)}" aria-label="Remove item">×</button></div>`);
+}
+function roundMoney(value){return Math.round((Number(value)||0)*100)/100}
+function splitShoppingPayment(force=false){
+  const rows=[...$('#shopping-payer-options').querySelectorAll('.shopping-payer-row')].filter(row=>row.querySelector('[name="buyer"]').value),total=Number($('#shopping-purchase-total').dataset.total)||0;if(!rows.length)return;
+  const cents=Math.round(total*100),base=Math.floor(cents/rows.length),remainder=cents%rows.length;
+  rows.forEach((row,index)=>{const amount=row.querySelector('[name="buyer-amount"]');if(force||amount.dataset.auto!=='false'){amount.value=((base+(index<remainder?1:0))/100).toFixed(2);amount.dataset.auto='true'}});
+}
+function updateShoppingTotal(){
+  const host=$('#shopping-purchase-items');if(!host)return;let total=0;
+  host.querySelectorAll('input[name="purchase-item"]').forEach(check=>{const row=check.closest('.shopping-purchase-row'),quantity=row.querySelector('[name="purchase-quantity"]'),amount=row.querySelector('[name="purchase-amount"]');quantity.disabled=amount.disabled=!check.checked;if(check.checked)total+=Number(amount.value)||0});
+  $('#shopping-custom-items').querySelectorAll('.shopping-custom-row').forEach(row=>{const amount=Number(row.querySelector('[name="custom-amount"]').value)||0;if(row.querySelector('[name="custom-name"]').value.trim())total+=amount});
+  const actualTotal=roundMoney(total),totalEl=$('#shopping-purchase-total');totalEl.dataset.total=String(actualTotal);totalEl.textContent=money(actualTotal);
+  const payerHost=$('#shopping-payer-options');payerHost.querySelectorAll('.shopping-payer-row').forEach(row=>{const select=row.querySelector('[name="buyer"]'),amount=row.querySelector('[name="buyer-amount"]');amount.disabled=!select.value});
+  splitShoppingPayment();
+  const selectedRows=[...payerHost.querySelectorAll('.shopping-payer-row')].filter(row=>row.querySelector('[name="buyer"]').value),allocated=roundMoney(selectedRows.reduce((sum,row)=>sum+(Number(row.querySelector('[name="buyer-amount"]').value)||0),0)),matches=Math.abs(allocated-actualTotal)<=.009;
+  $('#shopping-payer-total').textContent=`Allocated: ${money(allocated)} of ${money(actualTotal)}`;
+  const paymentError=$('#shopping-payment-error');paymentError.textContent=matches?'':`The amounts paid must add up to the actual trip total. Difference: ${money(Math.abs(actualTotal-allocated))}.`;paymentError.classList.toggle('hidden',matches);
+  const hasItems=[...document.querySelectorAll('#shopping-purchase-items [name="purchase-item"]:checked')].length>0||$('#shopping-custom-items .shopping-custom-row')!==null;$('#save-shopping-trip').disabled=!matches||!selectedRows.length||!hasItems;
+}
+async function saveShoppingTrip(event){
+  event.preventDefault();const form=event.currentTarget,data=foodData(),locationName=String(new FormData(form).get('location')||'').trim(),people=tripPeople().filter(person=>!person.left),buyers=[...form.querySelectorAll('select[name="buyer"]')].map(select=>({person:people.find(person=>String(person.id)===String(select.value)),amount:Number(select.closest('.shopping-payer-row').querySelector('[name="buyer-amount"]').value)})).filter(item=>item.person);
+  const current=aggregateGroceries(),recipeItems=[...form.querySelectorAll('input[name="purchase-item"]:checked')].map(check=>{const row=check.closest('.shopping-purchase-row'),ingredient=current.find(item=>String(item.id)===String(check.value)),quantity=Number(row.querySelector('[name="purchase-quantity"]').value),amountInput=row.querySelector('[name="purchase-amount"]'),amount=Number(amountInput.value);if(!ingredient||quantity<=0||amountInput.value.trim()===''||amount<0||quantity>ingredient.remaining+0.000001)return null;return {ingredient_id:ingredient.id,name:ingredient.name,unit:ingredient.unit,quantity,amount}}).filter(Boolean);
+  const customRows=[...form.querySelectorAll('.shopping-custom-row')],customItems=customRows.map(row=>({custom:true,name:row.querySelector('[name="custom-name"]').value.trim(),quantity:Number(row.querySelector('[name="custom-quantity"]').value),unit:row.querySelector('[name="custom-unit"]').value.trim(),amountText:row.querySelector('[name="custom-amount"]').value,amount:Number(row.querySelector('[name="custom-amount"]').value)})).filter(item=>item.name&&item.quantity>0&&item.unit&&item.amountText.trim()!==''&&Number.isFinite(item.amount)&&item.amount>=0);
+  const total=roundMoney(recipeItems.reduce((sum,item)=>sum+item.amount,0)+customItems.reduce((sum,item)=>sum+item.amount,0)),items=[...recipeItems,...customItems],allocated=roundMoney(buyers.reduce((sum,item)=>sum+item.amount,0));
+  if(!locationName)return alert('Enter the store or location.');if(!buyers.length)return alert('Select at least one person who paid.');if(!items.length)return alert('Add at least one recipe ingredient or other purchase.');if(recipeItems.length!==form.querySelectorAll('input[name="purchase-item"]:checked').length||customItems.length!==customRows.length)return alert('Complete the name, quantity, unit, and actual price for every selected item.');if(total>0&&buyers.some(item=>item.amount<=0))return alert('Each selected payer must have a positive paid amount.');if(Math.abs(allocated-total)>.009){const message=$('#shopping-payment-error');message.textContent=`The amounts paid must add up to the actual trip total. Difference: ${money(Math.abs(total-allocated))}.`;message.classList.remove('hidden');message.scrollIntoView({block:'nearest',behavior:'smooth'});return}
+  const trip={id:`shopping-${crypto.randomUUID()}`,location:locationName,date:new Date().toISOString(),buyer_ids:buyers.map(item=>String(item.person.id)),buyer_names:buyers.map(item=>item.person.name),buyers:buyers.map(item=>({id:String(item.person.id),name:item.person.name,amount:item.amount})),items,total};
+  activeTrip.expenses ||= [];
+  data.shoppingTrips.push(trip);const activePeople=people.filter(person=>!person.left).map(person=>String(person.id));
+  if(total>0){buyers.filter(item=>item.amount>0).forEach(item=>activeTrip.expenses.push({id:`exp-${crypto.randomUUID()}`,title:`Shopping · ${locationName}`,amount:item.amount,payer_id:String(item.person.id),split_between:activePeople,shopping_trip_id:trip.id,shopping_location:locationName,shopping_items:items.map(purchase=>purchase.name)}));activeTrip.workspace_data.expenses=activeTrip.expenses}
+  workspaceData().food=data;localStorage.setItem(key('food'),JSON.stringify(data));try{const saved=await updateTrip(activeTrip);if(!saved)return}catch(error){console.error('Could not save shopping trip to the trip budget.',error);return alert(error.message||'Could not save this shopping trip.')}
+  closeModal('shopping-trip-modal');renderGroceryList();renderPayments();showToast('Shopping trip saved and added to the budget.','success');
+}
 
 function mountBudgetPayments() {
   const view = $('#splitter-view');
@@ -865,7 +1019,7 @@ async function openRecordPayment(paymentIndex=null,prefill={}){
   const form=$('#record-payment-form'),people=tripPeople();
   for(const field of ['from','to']){
     const select=form.elements[field],current=payment?.[`${field}_id`]??(field==='from'?prefill.fromId:prefill.toId);
-    select.innerHTML=people.map(person=>`<option value="${safe(person.id)}">${safe(person.name)}</option>`).join('');
+    select.innerHTML=people.map(person=>`<option value="${safe(person.id)}">${safe(person.name)}${person.left?' (left)':''}</option>`).join('');
     if(current!=null&&people.some(person=>String(person.id)===String(current)))select.value=String(current);
     else if(payment?.[field])select.value=people.find(person=>person.name.toLowerCase()===String(payment[field]).toLowerCase())?.id||people[0]?.id||'';
     else if(field==='from'&&currentUser&&people.some(person=>String(person.id)===String(currentUser.id)))select.value=String(currentUser.id);
@@ -885,7 +1039,8 @@ function deletePaymentLog(index){
 }
 function renderPayments(){
   const list=$('#payment-list');if(!list)return;const items=readTripData('payments',[]),owner=isTripCreator();
-  list.innerHTML=items.length?items.map((payment,index)=>`<div class="payment-row"><span class="pay-icon">↗</span><div><b>${safe(payment.from)} paid ${safe(payment.to)}</b><small>${safe(payment.mode)}${payment.ref?` · ref ${safe(payment.ref)}`:''} · ${payment.date?new Date(payment.date).toLocaleDateString():''}</small></div><strong>${money(payment.amount)}</strong>${owner?`<div class="payment-row-actions"><button type="button" data-edit-payment="${index}" aria-label="Edit payment">Edit</button><button type="button" data-delete-payment="${index}" aria-label="Delete payment">Delete</button></div>`:''}</div>`).join(''):'<div class="empty-note">No payments yet.</div>';
+  const partyName=(payment,side)=>{const id=payment[`${side}_id`],person=tripPeopleCache.find(user=>id&&String(user.id)===String(id));return `${person?.name||payment[side]||'Trip member'}${person?.left?' (left)':''}`};
+  list.innerHTML=items.length?items.map((payment,index)=>`<div class="payment-row"><span class="pay-icon">↗</span><div><b>${safe(partyName(payment,'from'))} paid ${safe(partyName(payment,'to'))}</b><small>${safe(payment.mode)}${payment.ref?` · ref ${safe(payment.ref)}`:''} · ${payment.date?new Date(payment.date).toLocaleDateString():''}</small></div><strong>${money(payment.amount)}</strong>${owner?`<div class="payment-row-actions"><button type="button" data-edit-payment="${index}" aria-label="Edit payment">Edit</button><button type="button" data-delete-payment="${index}" aria-label="Delete payment">Delete</button></div>`:''}</div>`).join(''):'<div class="empty-note">No payments yet.</div>';
 }
 
 let activeForumThreadId=null;
@@ -1110,15 +1265,17 @@ async function loadTripPeople(){
     }catch(error){console.warn('Could not load trip members for selection.',error)}
   }
   const guests=(readTripData('people',[])||[]).filter(person=>!person.linked_user_id&&!users.some(user=>String(user.id)===String(person.id))).map((person,index)=>({id:String(person.id||`guest-${index}-${person.name}`),name:person.name||'Guest',avatar:person.avatar||'',guest:true}));
+  const departed=(readTripData('departed_members',[])||[]).map(person=>({id:String(person.user_id||person.id||''),name:person.name||'Former member',avatar:person.avatar||'',guest:false,left:true})).filter(person=>person.id&&!guests.some(user=>String(user.id)===person.id));
+  departed.forEach(person=>{const existing=users.find(user=>String(user.id)===person.id);if(existing){existing.left=true;existing.name=person.name||existing.name}else users.push(person)});
   tripPeopleCache=[...users,...guests];return tripPeopleCache;
 }
 function openModal(id){const modal=$(`#${id}`);modal?.classList.remove('hidden');modal?.querySelector('input:not([type="hidden"]),select,textarea,button:not(.modal-x):not([data-dismiss-modal])')?.focus()}
 function closeModal(id){$(`#${id}`)?.classList.add('hidden')}
 function mountModalDismissal(){document.addEventListener('click',e=>{const close=e.target.closest('[data-dismiss-modal]');if(close){closeModal(close.closest('.lakbay-modal-backdrop')?.id);return}if(e.target.matches('[data-close-modal]')){if(e.target.id==='expense-backdrop')$('#close-expense-btn')?.click();else closeModal(e.target.id);return}if(e.target.id==='modal-backdrop')$('#close-modal-btn')?.click();else if(e.target.id==='day-backdrop')$('#close-day-btn')?.click();else if(e.target.id==='activity-backdrop')$('#close-act-btn')?.click();else if(e.target.id==='note-backdrop')$('#close-note-btn')?.click();else if(e.target.id==='share-backdrop')$('#close-share-btn')?.click();else if(e.target.id==='expense-backdrop')$('#close-expense-btn')?.click();else if(e.target.id==='invite-popup-backdrop')$('#decline-invite-btn')?.click();else if(e.target.id==='join-trip-modal')$('#close-join-modal')?.click();else if(e.target.id==='thread-composer')e.target.classList.add('hidden')})}
 function normalizeGroups(items){return (Array.isArray(items)?items:[]).map((item,index)=>typeof item==='string'?{id:`legacy-${index}-${item}`,name:item,members:[]}:{...item,id:item.id||`group-${index}`,name:item.name||'Group',members:Array.isArray(item.members)?item.members:[]})}
-function tripPeople(){if(tripPeopleCache.length)return tripPeopleCache;const guests=(readTripData('people',[])||[]).map((person,index)=>({id:String(person.id||`guest-${index}-${person.name}`),name:person.name||'Guest',avatar:person.avatar||'',guest:true}));const ownName=currentUser?.user_metadata?.display_name||currentUser?.user_metadata?.full_name||currentUser?.user_metadata?.username||'You';return [{id:String(currentUser?.id||(!useSupabase?'me':'self')),name:ownName,guest:false},...guests]}
+function tripPeople(){if(tripPeopleCache.length)return tripPeopleCache;const guests=(readTripData('people',[])||[]).map((person,index)=>({id:String(person.id||`guest-${index}-${person.name}`),name:person.name||'Guest',avatar:person.avatar||'',guest:true})),departed=(readTripData('departed_members',[])||[]).map(person=>({id:String(person.user_id||person.id||''),name:person.name||'Former member',avatar:person.avatar||'',guest:false,left:true})).filter(person=>person.id);const ownName=currentUser?.user_metadata?.display_name||currentUser?.user_metadata?.full_name||currentUser?.user_metadata?.username||'You';return [{id:String(currentUser?.id||(!useSupabase?'me':'self')),name:ownName,guest:false},...guests,...departed]}
 async function openGroupModal(groupId){await loadTripPeople();const form=$('#group-form'),group=normalizeGroups(readTripData('groups',[])).find(x=>x.id===groupId);form.reset();form.dataset.editId=groupId||'';$('#group-modal-title').textContent=group?'Edit people group':'Create a people group';form.elements.name.value=group?.name||'';selectedGroupMembers=new Set(group?.members||[]);renderGroupCandidates();openModal('group-modal')}
-function renderGroupCandidates(){const people=tripPeople(),search=($('#group-member-search')?.value||'').toLowerCase();$('#group-selection-summary').textContent=selectedGroupMembers.size?`${selectedGroupMembers.size} selected · click a name to remove it`: 'No members selected';$('#group-member-options').innerHTML=people.filter(p=>p.name.toLowerCase().includes(search)).map(p=>`<button type="button" class="group-member-option${selectedGroupMembers.has(p.id)?' is-selected':''}" data-group-member="${safe(p.id)}"><span class="member-avatar${p.guest?' guest':''}">${safe(p.name[0]?.toUpperCase()||'?')}</span><span>${safe(p.name)}</span><span class="member-check">${selectedGroupMembers.has(p.id)?'✓':'＋'}</span></button>`).join('')||'<div class="empty-note">No matching people.</div>'}
+function renderGroupCandidates(){const people=tripPeople().filter(person=>!person.left),search=($('#group-member-search')?.value||'').toLowerCase();$('#group-selection-summary').textContent=selectedGroupMembers.size?`${selectedGroupMembers.size} selected · click a name to remove it`: 'No members selected';$('#group-member-options').innerHTML=people.filter(p=>p.name.toLowerCase().includes(search)).map(p=>`<button type="button" class="group-member-option${selectedGroupMembers.has(p.id)?' is-selected':''}" data-group-member="${safe(p.id)}"><span class="member-avatar${p.guest?' guest':''}">${safe(p.name[0]?.toUpperCase()||'?')}</span><span>${safe(p.name)}</span><span class="member-check">${selectedGroupMembers.has(p.id)?'✓':'＋'}</span></button>`).join('')||'<div class="empty-note">No matching people.</div>'}
 function renderIconPreview(url){const preview=$('#trip-icon-preview');if(!preview)return;let valid='';try{const parsed=new URL(url,location.href);if(['http:','https:'].includes(parsed.protocol)&&url.trim())valid=parsed.href}catch{}preview.innerHTML=valid?`<img src="${safe(valid)}" alt="Trip icon preview"><span>Preview</span>`:'<span class="icon-preview-empty">Trip initials will be used when no image is set.</span>'}
 async function renderSettingsPeople(){
   const host=$('#people-list');if(!host||!activeTrip)return;
@@ -1126,8 +1283,8 @@ async function renderSettingsPeople(){
   const ownerId=String(activeTrip.owner_id||'');
   host.innerHTML=users.map(person=>{
     const name=person.name||'Trip member',avatar=person.avatar?`<img src="${safe(person.avatar)}" alt="">`:safe(name[0]?.toUpperCase()||'?');
-    const status=person.guest?'Guest · not on Lakbay':String(person.id)===ownerId?'Trip owner':'Trip member';
-    return `<div class="member-row"><span class="member-avatar${person.guest?' guest':''}${person.avatar?' has-image':''}">${avatar}</span><b>${safe(name)}</b><small>${safe(status)}</small>${person.guest?`<button class="member-remove" data-remove-person="${safe(person.id)}" aria-label="Remove ${safe(name)}">×</button>`:''}</div>`;
+    const status=person.left?'Former member':person.guest?'Guest · not on Lakbay':String(person.id)===ownerId?'Trip owner':'Trip member';
+    return `<div class="member-row"><span class="member-avatar${person.guest?' guest':''}${person.avatar?' has-image':''}">${avatar}</span><b>${safe(name)}</b><small>${safe(status)}</small>${person.guest&&!person.left?`<button class="member-remove" data-remove-person="${safe(person.id)}" aria-label="Remove ${safe(name)}">×</button>`:''}</div>`;
   }).join('')||'<div class="empty-note">No trip members yet.</div>';
   host.querySelectorAll('[data-remove-person]').forEach(button=>button.onclick=()=>{
     const people=readTripData('people',[]).filter(person=>String(person.id)!==button.dataset.removePerson);
@@ -1182,7 +1339,7 @@ function mountProfile(){
 function calculateTripBalances(users){
   const balances=new Map(users.map(user=>[String(user.id),0]));
   for(const expense of (activeTrip?.expenses||[])){
-    const amount=Number(expense.amount)||0,shares=(Array.isArray(expense.split_between)?expense.split_between:[]).map(String);
+    const amount=Number(expense.amount)||0,shares=(Array.isArray(expense.split_between)?expense.split_between:[]).map(String).filter(id=>!users.some(user=>String(user.id)===id&&user.left));
     if(!shares.length)continue;
     const payer=String(expense.payer_id||'');if(balances.has(payer))balances.set(payer,balances.get(payer)+amount);
     shares.forEach(id=>{if(balances.has(id))balances.set(id,balances.get(id)-amount/shares.length)});
@@ -1233,20 +1390,21 @@ async function openMySummaryModal(){
   if(!activeTrip||!currentUser||!isTripMember)return;
   const users=await loadTripPeople(),me=String(currentUser.id),myPerson=users.find(user=>String(user.id)===me),expenses=activeTrip.expenses||[],payments=readTripData('payments',[]),balances=calculateTripBalances(users),balance=balances.get(me)||0;
   const expenseRows=expenses.filter(expense=>String(expense.payer_id||'')===me||(Array.isArray(expense.split_between)&&expense.split_between.map(String).includes(me))).map(expense=>{
-    const participants=(Array.isArray(expense.split_between)?expense.split_between:[]).map(String),share=participants.includes(me)?Number(expense.amount||0)/Math.max(1,participants.length):null;
-    const paidBy=users.find(user=>String(user.id)===String(expense.payer_id))?.name||'Trip member';
+    const participants=(Array.isArray(expense.split_between)?expense.split_between:[]).map(String).filter(id=>!users.some(user=>String(user.id)===id&&user.left)),share=participants.includes(me)?Number(expense.amount||0)/Math.max(1,participants.length):null;
+    const payer=users.find(user=>String(user.id)===String(expense.payer_id)),paidBy=`${payer?.name||'Trip member'}${payer?.left?' (left)':''}`;
     const shareText=share===null?'Not in split':`${safe(money(expense.amount))} ÷ ${participants.length} = ${safe(money(share))}`;
-    return `<article class="my-summary-row"><div><strong>${safe(expense.title||'Expense')}</strong><small>${safe(money(expense.amount))} total · ${participants.length} ${participants.length===1?'person':'people'} sharing · Your share: ${shareText} · Paid by ${safe(paidBy)}</small></div><b>${share===null?'Payer only':`${safe(money(share))} share`}</b></article>`;
+    const shoppingNote=expense.shopping_location?` · Bought at ${safe(expense.shopping_location)}`:'';
+    return `<article class="my-summary-row"><div><strong>${safe(expense.title||'Expense')}</strong><small>${safe(money(expense.amount))} total · ${participants.length} ${participants.length===1?'person':'people'} sharing · Your share: ${shareText} · Paid by ${safe(paidBy)}${shoppingNote}</small></div><b>${share===null?'Payer only':`${safe(money(share))} share`}</b></article>`;
   });
   const paymentRows=payments.flatMap(payment=>{
     const from=resolvePaymentParty(payment,'from',users),to=resolvePaymentParty(payment,'to',users);
     if(!from||!to)return[];
     const outgoing=String(from.id)===me,incoming=String(to.id)===me;if(!outgoing&&!incoming)return[];
     const other=outgoing?to:from,date=payment.date?new Date(payment.date).toLocaleDateString():'';
-    return [`<article class="my-summary-row"><div><strong>${outgoing?'You paid':'Received from'} ${safe(other.name)}</strong><small>${safe(payment.mode||'Payment')}${date?` · ${safe(date)}`:''}${payment.ref?` · Ref ${safe(payment.ref)}`:''}</small></div><b class="${outgoing?'summary-credit':'summary-debit'}">${outgoing?'+':'−'}${safe(money(payment.amount))}</b></article>`];
+    return [`<article class="my-summary-row"><div><strong>${outgoing?'You paid':'Received from'} ${safe(other.name)}${other.left?' (left)':''}</strong><small>${safe(payment.mode||'Payment')}${date?` · ${safe(date)}`:''}${payment.ref?` · Ref ${safe(payment.ref)}`:''}</small></div><b class="${outgoing?'summary-credit':'summary-debit'}">${outgoing?'+':'−'}${safe(money(payment.amount))}</b></article>`];
   });
   const paidTotal=expenses.filter(item=>String(item.payer_id||'')===me).reduce((sum,item)=>sum+Number(item.amount||0),0);
-  const shareTotal=expenses.reduce((sum,item)=>{const list=(Array.isArray(item.split_between)?item.split_between:[]).map(String);return sum+(list.includes(me)?Number(item.amount||0)/Math.max(1,list.length):0)},0);
+  const shareTotal=expenses.reduce((sum,item)=>{const list=(Array.isArray(item.split_between)?item.split_between:[]).map(String).filter(id=>!users.some(user=>String(user.id)===id&&user.left));return sum+(list.includes(me)?Number(item.amount||0)/Math.max(1,list.length):0)},0);
   const paidOut=payments.reduce((sum,item)=>sum+(String(resolvePaymentParty(item,'from',users)?.id||'')===me?Number(item.amount)||0:0),0);
   const received=payments.reduce((sum,item)=>sum+(String(resolvePaymentParty(item,'to',users)?.id||'')===me?Number(item.amount)||0:0),0);
   let modal=$('#my-summary-modal');
@@ -1259,7 +1417,7 @@ async function openMySummaryModal(){
 async function renderOverviewMembers(){
   const host=$('#overview-members-list');if(!host)return;
   const users=await loadTripPeople();const groups=normalizeGroups(readTripData('groups',[]));const balances=calculateTripBalances(users);
-  host.innerHTML=users.map(user=>{const balance=balances.get(String(user.id))||0;const settled=Math.abs(balance)<=.05;const status=settled?'settled':balance>0?'owed':'owes';const groupNames=groups.filter(group=>group.members.map(String).includes(String(user.id))).map(group=>group.name);const avatar=user.avatar?`<img src="${safe(user.avatar)}" alt="">`:safe(user.name?.[0]?.toUpperCase()||'?');return `<article class="overview-member-row"><span class="overview-member-avatar ${user.avatar?'has-image':''}">${avatar}</span><span class="overview-member-copy"><b>${safe(user.name)}</b><small>${groupNames.length?safe(groupNames.join(' · ')):'No group'}</small></span><strong class="member-balance ${status}">${settled?'Settled':`${balance>0?'+':'−'}${money(Math.abs(balance))}`}</strong></article>`}).join('')||'<div class="empty-note">No trip members yet.</div>';
+  host.innerHTML=users.filter(user=>!user.left).map(user=>{const balance=balances.get(String(user.id))||0;const settled=Math.abs(balance)<=.05;const status=settled?'settled':balance>0?'owed':'owes';const groupNames=groups.filter(group=>group.members.map(String).includes(String(user.id))).map(group=>group.name);const avatar=user.avatar?`<img src="${safe(user.avatar)}" alt="">`:safe(user.name?.[0]?.toUpperCase()||'?');return `<article class="overview-member-row"><span class="overview-member-avatar ${user.avatar?'has-image':''}">${avatar}</span><span class="overview-member-copy"><b>${safe(user.name)}</b><small>${groupNames.length?safe(groupNames.join(' · ')):'No group'}</small></span><strong class="member-balance ${status}">${settled?'Settled':`${balance>0?'+':'−'}${money(Math.abs(balance))}`}</strong></article>`}).join('')||'<div class="empty-note">No trip members yet.</div>';
 }
 function renderOverviewShowcase(items=forumData()){
   const host=$('#overview-showcase-content');if(!host)return;
@@ -1278,6 +1436,8 @@ function updateOverviewCountdown(){
 }
 async function refreshWorkspace(){
   if(!activeTrip)return;browsingAllTrips=false;
+  const users=await loadTripPeople();
+  if(!activeTrip)return;
   $('#sidebar-trip-name')?.replaceChildren(document.createTextNode(activeTrip.destination||'Choose a trip'));
   if($('#setting-name'))$('#setting-name').value=activeTrip.destination||'';
   renderFood();renderPayments();renderForum();renderSettings();
@@ -1288,7 +1448,7 @@ async function refreshWorkspace(){
   $('#active-trip-title').textContent=activeTrip.destination||'Your trip';
   $('#active-trip-emoji').innerHTML=workspaceData().icon_url?`<img src="${safe(workspaceData().icon_url)}" alt="">`:safe(activeTrip.emoji||'✈️');
   $('#overview-day-count').textContent=`${days.length} ${days.length===1?'day':'days'}`;
-  const users=await loadTripPeople(),balances=calculateTripBalances(users),myBalance=balances.get(String(currentUser?.id||'me'))||0;
+  const balances=calculateTripBalances(users),myBalance=balances.get(String(currentUser?.id||'me'))||0;
   const publicGuest=!currentUser&&['public_view','public_edit'].includes(activeTrip.visibility);$('#overview-balance').textContent=money(publicGuest?expenses.reduce((sum,row)=>sum+Number(row.amount||0),0):myBalance);$('#overview-balance')?.parentElement?.querySelector('small')?.replaceChildren(document.createTextNode(publicGuest?'Expenses logged':'Your balance'));
   const start=workspaceData().start_date||days.map(day=>day.date).filter(Boolean).sort()[0];
   $('#active-trip-date-copy').textContent=start?new Date(`${start}T00:00:00`).toLocaleDateString(undefined,{month:'long',day:'numeric',year:'numeric'}):'Add trip dates in settings to start your countdown.';
