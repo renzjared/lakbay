@@ -8,7 +8,9 @@ export const useSupabase = SUPABASE_URL !== 'YOUR_SUPABASE_URL';
 export let supabase = null;
 
 if (useSupabase) {
-  supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+  supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+    auth: { flowType: 'pkce', detectSessionInUrl: true, persistSession: true, autoRefreshToken: true }
+  });
 }
 
 const DB_KEY = 'travel_app_trips';
@@ -114,7 +116,9 @@ export async function getTripLinkPreview(code) {
     visibility: trip.visibility || 'private',
     start_date: trip.workspace_data?.start_date || null,
     end_date: trip.workspace_data?.end_date || null,
-    day_count: trip.days?.length || 0
+    day_count: trip.days?.length || 0,
+    workspace_data: trip.workspace_data || {},
+    pending_people: (trip.workspace_data?.people || []).filter(person => person && person.guest !== false && !person.linked_user_id).map(({id,name}) => ({id,name}))
   };
 }
 
@@ -182,14 +186,17 @@ export async function updateTrip(updatedTrip) {
   }
 }
 
-export async function createTrip(emoji, destination) {
+export async function createTrip(emoji, destination, options = {}) {
   if (useSupabase) {
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     if (userError) throw userError;
     if (!user) throw new Error('Please sign in with Discord before creating a trip.');
-    const newTrip = { 
-      emoji: emoji || '📍', destination, days: [], notes: [], workspace_data: { expenses: [] },
-      owner_id: user.id, visibility: 'private'
+    const newTrip = {
+      emoji: emoji || '📍', destination, days: [], notes: [],
+      workspace_data: {
+        expenses: [], icon_url: options.iconUrl || '', start_date: options.startDate || null, end_date: options.endDate || null
+      },
+      owner_id: user.id, visibility: ['private', 'public_view', 'public_edit'].includes(options.visibility) ? options.visibility : 'private'
     };
     let { data, error } = await supabase.from('trips').insert(newTrip).select('*').single();
     if (error && /workspace_data/i.test(error.message || '')) {
@@ -203,7 +210,11 @@ export async function createTrip(emoji, destination) {
     if (!data) throw new Error('Supabase did not return the created trip.');
     return hydrateTrip(data);
   } else {
-    const newTrip = { emoji: emoji || '📍', destination, days: [], notes: [], expenses: [], workspace_data: {} };
+    const newTrip = {
+      emoji: emoji || '📍', destination, days: [], notes: [], expenses: [],
+      visibility: ['private', 'public_view', 'public_edit'].includes(options.visibility) ? options.visibility : 'private',
+      workspace_data: { expenses: [], icon_url: options.iconUrl || '', start_date: options.startDate || null, end_date: options.endDate || null }
+    };
     const trips = await getTrips();
     newTrip.id = 'trip-' + Date.now().toString();
     trips.push(newTrip);

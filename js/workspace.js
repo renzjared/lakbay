@@ -1,5 +1,5 @@
 import { activeTrip, loadTripDays, clearActiveTrip, isTripMember, activeUserRole } from './itinerary.js';
-import { getTrip, getTrips, getPublicTripView, updateTrip, useSupabase, supabase } from './storage.js';
+import { getTrip, getTrips, getTripLinkPreview, getPublicTripView, updateTrip, useSupabase, supabase } from './storage.js';
 import { currentUser } from './auth.js';
 import { switchView, returnFromProfile, showToast } from './ui.js';
 
@@ -59,7 +59,8 @@ export function initWorkspace() {
       if (nav.closest('#account-menu') || nav.id === 'top-settings-btn') document.body.classList.add('mobile-content-open');
     }
   });
-  document.addEventListener('lakbay:trip-loaded', () => { tripPeopleCache=[]; refreshWorkspace(); });
+  document.addEventListener('lakbay:trip-loaded', () => { invalidateTripPeopleCache(); refreshWorkspace(); });
+  document.addEventListener('lakbay:trip-preview-shell', () => { syncAccessGate(); refreshTripSwitcher(); });
   document.addEventListener('lakbay:view-changing',event=>{if(event.detail?.to==='settings'){beginSettingsDraft(event.detail.from);localStorage.setItem(`lakbay_${activeTrip?.id}_settings_return_view`,event.detail.from||'trips')}else if(event.detail?.from!=='settings'&&activeTrip)localStorage.setItem(`lakbay_${activeTrip.id}_settings_return_view`,event.detail.from||'trips')});
   document.addEventListener('lakbay:settings-navigation-attempt',event=>{pendingSettingsNavigation=()=>{if(event.detail?.target==='__trip-switch__')return;switchView(event.detail?.target||'trips',{force:true})};showSettingsNavigationWarning()});
   document.addEventListener('input',event=>{if(event.target.closest('#settings-view'))updateSettingsDirtyBanner()});
@@ -67,10 +68,16 @@ export function initWorkspace() {
   document.addEventListener('click',e=>{const featured=e.target.closest('[data-overview-thread]');if(featured){switchView('forum');window.setTimeout(()=>openForumThread(featured.dataset.overviewThread),80)}});
   document.addEventListener('keydown',e=>{const preview=e.target.closest('[data-overview-thread],.thread-open[data-open-thread]');if(preview&&(e.key==='Enter'||e.key===' ')){e.preventDefault();preview.click()}});
   document.addEventListener('lakbay:trip-loaded', () => { syncAccessGate(); refreshTripSwitcher(); });
-  document.addEventListener('lakbay:auth-changed',()=>{const userId=String(currentUser?.id||'');refreshTripSwitcher();if(userId!==lastWorkspaceUserId){lastWorkspaceUserId=userId;tripPeopleCache=[];if(activeTrip)refreshWorkspace()}});
+  document.addEventListener('lakbay:auth-changed',()=>{const userId=String(currentUser?.id||'');refreshTripSwitcher();if(userId!==lastWorkspaceUserId){lastWorkspaceUserId=userId;invalidateTripPeopleCache();if(activeTrip)refreshWorkspace()}});
   document.addEventListener('lakbay:trip-list-updated', refreshTripSwitcher);
+  window.lakbayJoinTripByInvite = beginInviteJoin;
   refreshTripSwitcher();
   if (activeTrip) refreshWorkspace();
+  if (sessionStorage.getItem('lakbay_invite_accept_pending') === 'true') {
+    const code = sessionStorage.getItem('lakbay_public_invite_preview') || new URLSearchParams(location.search).get('invite');
+    sessionStorage.removeItem('lakbay_invite_accept_pending');
+    if (code) void beginInviteJoin(code);
+  }
 }
 
 function mountNavigation() {
@@ -92,20 +99,21 @@ function mountNavigation() {
     desktopNav.insertAdjacentElement('afterend', channelNav);
   }
   const sidebarContent = $('.sidebar-content');
-  if (sidebarContent && !$('#mobile-trip-browser')) sidebarContent.insertAdjacentHTML('afterbegin', '<section id="mobile-trip-browser" class="mobile-trip-browser"><h1>Your trips</h1><label class="mobile-trip-search"><span aria-hidden="true">⌕</span><input id="mobile-trip-search" type="search" placeholder="Search your trips…" aria-label="Search your trips"></label><div id="mobile-trip-cards" class="mobile-trip-cards"></div><div id="mobile-trip-empty-actions" class="mobile-trip-empty-actions hidden"><p>No trips yet</p><button type="button" class="action-button" id="mobile-create-trip">＋ Create a trip</button><button type="button" class="light-button" id="mobile-join-trip">Join a trip</button></div></section>');
+  if (sidebarContent && !$('#mobile-trip-browser')) sidebarContent.insertAdjacentHTML('afterbegin', '<section id="mobile-trip-browser" class="mobile-trip-browser"><h1>Your trips</h1><label class="mobile-trip-search"><span aria-hidden="true">⌕</span><input id="mobile-trip-search" type="search" placeholder="Search your trips…" aria-label="Search your trips"></label><div id="mobile-trip-cards" class="mobile-trip-cards"></div><div id="mobile-trip-empty-actions" class="mobile-trip-empty-actions hidden"><p>No trips yet</p><button type="button" class="light-button" id="mobile-join-trip">Have an invite?　Join a trip</button></div></section>');
   $('#mobile-trip-search')?.addEventListener('input', event => {
     const query=event.target.value.trim().toLocaleLowerCase();
     document.querySelectorAll('#mobile-trip-cards [data-search]').forEach(card=>card.classList.toggle('hidden',!card.dataset.search.includes(query)));
   });
-  $('#mobile-create-trip')?.addEventListener('click', () => $('#trip-server-add')?.click());
   $('#mobile-join-trip')?.addEventListener('click', openJoinModal);
   const main = $('main');
   if (main && !$('#mobile-content-header')) main.insertAdjacentHTML('afterbegin', '<header id="mobile-content-header" class="lakbay-topbar mobile-workspace-header"><button type="button" class="mobile-back-button" id="mobile-nav-back" aria-label="Back to navigation"><span aria-hidden="true">←</span><span>Back</span></button><strong id="mobile-view-title">Overview</strong><span class="mobile-header-spacer"></span></header>');
-  const showContent = () => document.body.classList.add('mobile-content-open');
+  const showContent = () => {
+    if (!document.body.classList.contains('mobile-content-open')) document.body.classList.add('mobile-content-open');
+  };
   const showNavigation = () => document.body.classList.remove('mobile-content-open');
   const syncPublicPreview = () => { if (document.body.classList.contains('has-public-trip-invite')) showContent(); };
   syncPublicPreview();
-  new MutationObserver(syncPublicPreview).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+  document.addEventListener('lakbay:public-invite-preview', syncPublicPreview);
   $('#mobile-nav-back')?.addEventListener('click', showNavigation);
   document.addEventListener('lakbay:view-changing', event => {
     const labels = { trips: 'Overview', days: 'Itinerary', day: 'Itinerary', food: 'Food', splitter: 'Budget', forum: 'Forum', settings: 'Trip settings', profile: 'Profile settings' };
@@ -234,7 +242,7 @@ async function leaveCurrentTrip(){
     const tripId=activeTrip.id;
     if(useSupabase){const {error}=await supabase.rpc('leave_trip',{p_trip_id:tripId});if(error)throw error}
     else {const members=workspaceData().departed_members||[];members.push({user_id:String(currentUser.id),name:discordUsername()||currentForumAuthor(),left_at:new Date().toISOString()});workspaceData().departed_members=members}
-    closeModal('leave-trip-modal');clearActiveTrip();tripPeopleCache=[];switchView('trips',{force:true});syncAccessGate();await refreshTripSwitcher();showToast('You left the trip. Your budget history was retained.','success');
+    closeModal('leave-trip-modal');clearActiveTrip();tripPeopleCache=[];switchView('trips',{force:true});syncAccessGate();await window.lakbayRenderTrips?.();await refreshTripSwitcher();showToast('You left the trip. Your budget history was retained.','success');
   }catch(error){console.error('Could not leave trip.',error);alert(error.message||'Could not leave this trip. Please try again.')}
 }
 
@@ -243,7 +251,7 @@ function createTripFromSwitcher() {
   closeTripSwitcher();
   if (useSupabase && !currentUser) { $('#login-discord-btn')?.click(); return; }
   switchView('trips');
-  $('#add-trip-btn')?.click();
+  document.dispatchEvent(new Event('lakbay:create-trip-requested'));
 }
 
 function tripInitials(trip) {
@@ -372,7 +380,7 @@ function mountOverview() {
   <div id="active-trip-overview" class="active-trip-overview hidden trip-browser"><div class="active-trip-head"><div class="trip-art"><span>✳</span><b id="active-trip-emoji">✈️</b></div><div class="active-trip-copy"><h2 id="active-trip-title"></h2><p id="active-trip-date-copy">Trip overview and shared planning.</p><div class="active-trip-actions"><button class="action-button" data-target="days">Open itinerary　→</button><button class="light-button" id="overview-share">Invite your people</button><button class="outline-btn guest-join-trip hidden" id="guest-join-trip">Join this trip</button><button class="text-link" id="all-trips-button">All trips</button></div></div></div><div class="overview-cards"><article class="overview-card countdown"><strong id="overview-countdown">—</strong><small>Until trip start</small></article><article class="overview-card overview-balance-card"><strong id="overview-balance">₱0</strong><small>Your balance</small><div class="balance-actions"><button type="button" class="light-button" data-open-my-pay>Pay</button><button type="button" class="light-button" data-open-my-summary>Summary</button></div></article><article class="overview-card"><strong id="overview-day-count">0 days</strong><small>In the plan</small></article></div><div class="overview-community-grid"><section class="overview-members-panel"><h2>Trip members</h2><div id="overview-members-list"></div></section><section class="overview-forum-panel"><div class="overview-panel-heading"><h2>Forum</h2><button type="button" class="text-link" data-target="forum">Open forum →</button></div><div id="overview-showcase-content"></div></section></div></div>
   <div id="trip-search-controls" class="trip-search-controls trip-browser"><label class="trip-search"><span>⌕</span><input id="trip-search-input" type="search" placeholder="Search your trips…"></label><label class="filter-select"><span>Show</span><select id="trip-filter"><option value="all">All trips</option><option value="upcoming">Upcoming</option><option value="past">Past trips</option><option value="planning">Planning in progress</option></select></label></div>
   <div id="join-trip-modal" class="join-trip-overlay hidden"><form class="join-trip-card" id="join-trip-form"><button type="button" class="join-close" id="close-join-modal" aria-label="Close">×</button><div class="join-icon">↗</div><h2>Join a trip</h2><p>Paste an invite code or the full invite link.</p><label for="join-trip-value">Invite code or link</label><input id="join-trip-value" autocomplete="off" placeholder="Paste code or invite link" required><button class="primary-btn join-submit" type="submit">Find trip　→</button></form></div>
-  <div id="pending-person-link-modal" class="lakbay-modal-backdrop hidden" data-close-modal><section class="lakbay-modal pending-person-modal" role="dialog" aria-modal="true" aria-labelledby="pending-person-title"><div class="pending-person-mark">↗</div><h2 id="pending-person-title">Are you already listed?</h2><p id="pending-person-copy"></p><div id="pending-person-options" class="pending-person-options"></div><button type="button" id="join-as-new-person" class="light-button pending-person-new">No, add me as a new person</button></section></div>`);
+  <div id="pending-person-link-modal" class="lakbay-modal-backdrop hidden"><section class="lakbay-modal pending-person-modal" role="dialog" aria-modal="true" aria-labelledby="pending-person-title"><button type="button" class="modal-x" id="cancel-pending-person-join" aria-label="Cancel joining">×</button><div class="pending-person-mark">↗</div><h2 id="pending-person-title">Are you already listed?</h2><p id="pending-person-copy"></p><div id="pending-person-options" class="pending-person-options"></div><button type="button" id="join-as-new-person" class="light-button pending-person-new">No, add me as a new person</button></section></div>`);
 
   const tripList = $('#trip-list');
   if (tripList) tripList.classList.add('new-trip-grid', 'trip-browser');
@@ -385,29 +393,26 @@ function mountOverview() {
     actions.className = 'browser-top-actions';
     actions.id = 'browser-actions';
     header.append(actions);
-    const createButton = header.querySelector('#add-trip-btn');
-    if (createButton) {
-      createButton.textContent = 'Create trip';
-      createButton.className = 'primary-btn';
-      actions.append(createButton);
-    }
-    actions.insertAdjacentHTML('beforeend', '<button id="join-trip-btn" class="outline-btn">Join a trip</button>');
+    actions.insertAdjacentHTML('beforeend', '<div class="browser-join-cta"><span>Have an invite?</span><button id="join-trip-btn" class="outline-btn">Join a trip</button></div>');
   }
   const search = $('#trip-search-controls');
   if (header && search) header.after(search);
   $('#active-trip-overview')?.classList.add('trip-browser');
   $('#landing-discord-login')?.addEventListener('click', () => $('#login-discord-btn')?.click());
   $('#join-trip-btn')?.addEventListener('click', openJoinModal);
+  document.addEventListener('lakbay:open-join-trip',openJoinModal);
   $('#close-join-modal')?.addEventListener('click', closeJoinModal);
   $('#join-trip-modal')?.addEventListener('click', e => { if (e.target.id === 'join-trip-modal') closeJoinModal(); });
-  $('#pending-person-link-modal')?.addEventListener('click',e=>{if(e.target.id==='pending-person-link-modal'&&pendingLinkTrip)void completeJoin(pendingLinkTrip,null)});
+  $('#pending-person-link-modal')?.addEventListener('click',e=>{if(e.target.id==='pending-person-link-modal')cancelPendingJoin()});
+  $('#cancel-pending-person-join')?.addEventListener('click',cancelPendingJoin);
+  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!$('#pending-person-link-modal')?.classList.contains('hidden'))cancelPendingJoin()});
   $('#join-trip-form')?.addEventListener('submit', submitJoinTrip);
-  $('#pending-person-options')?.addEventListener('click',async event=>{const choice=event.target.closest('[data-link-pending-person]');if(!choice||!pendingLinkTrip)return;const person=(pendingLinkPeople||[]).find(item=>String(item.id)===choice.dataset.linkPendingPerson);if(person)await completeJoin(pendingLinkTrip,person)});
-  $('#join-as-new-person')?.addEventListener('click',async()=>{if(pendingLinkTrip)await completeJoin(pendingLinkTrip,null)});
+  $('#pending-person-options')?.addEventListener('click',async event=>{const choice=event.target.closest('[data-link-pending-person]');if(!choice||!pendingLinkTrip)return;const person=(pendingLinkPeople||[]).find(item=>String(item.id)===choice.dataset.linkPendingPerson);if(person)await finishPendingJoin(person)});
+  $('#join-as-new-person')?.addEventListener('click',async()=>{if(pendingLinkTrip)await finishPendingJoin(null)});
   document.addEventListener('click', e => {
     const button = e.target.closest('[data-empty-action]');
     if (!button) return;
-    if (button.dataset.emptyAction === 'create') $('#add-trip-btn')?.click(); else openJoinModal();
+    if (button.dataset.emptyAction === 'create') document.dispatchEvent(new Event('lakbay:create-trip-requested')); else openJoinModal();
   });
   $('#trip-search-input')?.addEventListener('input', filterTrips);
   $('#trip-filter')?.addEventListener('change', filterTrips);
@@ -441,6 +446,12 @@ function syncAccessGate() {
   $('.sidebar')?.classList.toggle('no-active-trip', !activeTrip);
   $('.lakbay-topbar')?.classList.toggle('hidden', needsLogin);
   $('#landing-gate')?.classList.toggle('hidden', !needsLogin);
+  const landingCopy=$('#landing-gate .landing-copy');
+  let authNotice=$('#auth-callback-notice');
+  if(needsLogin&&window.lakbayAuthErrorMessage&&landingCopy){
+    if(!authNotice){authNotice=document.createElement('p');authNotice.id='auth-callback-notice';authNotice.className='auth-inline-notice';authNotice.setAttribute('role','status');authNotice.setAttribute('aria-live','polite');landingCopy.querySelector('.landing-actions')?.insertAdjacentElement('beforebegin',authNotice)}
+    authNotice.textContent=window.lakbayAuthErrorMessage;
+  }else authNotice?.remove();
   document.querySelectorAll('.trip-browser').forEach(el => el.classList.toggle('hidden', needsLogin));
   const navigationHidden = needsLogin || !activeTrip;
   const desktopNav = $('#desktop-global-nav');
@@ -486,6 +497,7 @@ function openJoinModal(){if(useSupabase&&!currentUser){$('#login-discord-btn')?.
 function closeJoinModal(){$('#join-trip-modal')?.classList.add('hidden');$('#join-trip-value').value=''}
 let pendingLinkTrip=null;
 let pendingLinkPeople=[];
+let pendingLinkCode='';
 function discordUsername(){
   const metadata=currentUser?.user_metadata||{},identity=currentUser?.identities?.find(item=>item.provider==='discord')?.identity_data||{};
   return String(identity.username||metadata.username||identity.user_name||metadata.user_name||identity.preferred_username||metadata.preferred_username||'').trim().replace(/^@/,'');
@@ -520,16 +532,29 @@ async function linkPendingPerson(trip,person){
   return await updateTrip(trip);
 }
 async function completeJoin(trip,person){
-  if(person){const ok=await linkPendingPerson(trip,person);if(!ok)return alert('The person could not be linked. Please try again.')}
-  pendingLinkTrip=null;pendingLinkPeople=[];$('#pending-person-link-modal')?.classList.add('hidden');closeJoinModal();
-  tripPeopleCache=[];await loadTripDays(trip);document.dispatchEvent(new Event('lakbay:trip-loaded'));switchView('trips');
+  let joinedTrip=trip;
+  if(useSupabase){
+    const {data,error}=await supabase.rpc('join_trip_by_invite',{p_code:pendingLinkCode||String(trip.invite_code||trip.id)});
+    if(error)throw error;
+    joinedTrip=Array.isArray(data)?data[0]:data;
+    if(!joinedTrip)throw new Error('The invitation could not be found.');
+  }
+  if(person){const ok=await linkPendingPerson(joinedTrip,person);if(!ok)throw new Error('The person could not be linked. Please try again.')}
+  if(currentUser){
+    const metadata=currentUser.user_metadata||{},member={id:String(currentUser.id),name:discordUsername()||metadata.display_name||metadata.full_name||'You',avatar:metadata.avatar_url||metadata.picture||''};
+    joinedTrip.public_members=[...(joinedTrip.public_members||[]).filter(item=>String(item.id)!==member.id),member];
+  }
+  pendingLinkTrip=null;pendingLinkPeople=[];pendingLinkCode='';$('#pending-person-link-modal')?.classList.add('hidden');closeJoinModal();
+  invalidateTripPeopleCache();await loadTripDays(joinedTrip);invalidateTripPeopleCache();document.dispatchEvent(new Event('lakbay:trip-loaded'));if(joinedTrip.public_members?.length)renderOverviewMembers(joinedTrip.public_members);document.dispatchEvent(new Event('lakbay:trip-invitation-joined'));switchView('trips');
 }
+async function finishPendingJoin(person){try{await completeJoin(pendingLinkTrip,person)}catch(error){console.error('Could not finish joining trip.',error);alert(error.message||'Could not join this trip. Please try again.')}}
 async function prepareJoinedTrip(trip,alreadyMember=false){
+  if(!pendingLinkCode)pendingLinkCode=String(trip.invite_code||trip.id);
   const people=pendingPeopleFor(trip),username=await resolveDiscordUsername();
   const exact=username?people.find(person=>normalizePersonName(person.name)===normalizePersonName(username)):null;
   if(exact){await completeJoin(trip,exact);return}
   if(!alreadyMember&&people.length){
-    pendingLinkTrip=trip;pendingLinkPeople=people;closeJoinModal();
+    pendingLinkTrip=trip;pendingLinkPeople=people;pendingLinkCode=String(trip.invite_code||trip.id);closeJoinModal();
     $('#pending-person-title').textContent=`Joining ${trip.destination||'this trip'}`;
     $('#pending-person-copy').textContent='Were you added earlier as one of these people? Select your name to connect your existing trip records.';
     $('#pending-person-options').innerHTML=people.map(person=>`<button type="button" class="pending-person-option" data-link-pending-person="${safe(person.id)}"><span class="pending-person-avatar">${safe(person.name?.[0]?.toUpperCase()||'?')}</span><span><b>${safe(person.name||'Trip member')}</b><small>Link this trip profile to your account</small></span><span class="pending-person-select">Select</span></button>`).join('');
@@ -537,19 +562,40 @@ async function prepareJoinedTrip(trip,alreadyMember=false){
   }
   await completeJoin(trip,null);
 }
+function cancelPendingJoin(){
+  pendingLinkTrip=null;pendingLinkPeople=[];pendingLinkCode='';
+  $('#pending-person-link-modal')?.classList.add('hidden');
+}
+async function beginInviteJoin(code){
+  try{
+    const trip=await getTripLinkPreview(code);
+    if(!trip)throw new Error('The invitation could not be found.');
+    if(!Array.isArray(trip.pending_people))throw new Error('This invite needs the latest Lakbay database update before it can be joined safely. Apply the current supabase-overhaul.sql migration, then try again.');
+    const pending=trip.pending_people;
+    trip.workspace_data={...(trip.workspace_data||{}),people:pending};
+    pendingLinkCode=String(trip.invite_code||code);
+    await prepareJoinedTrip(trip,false);
+    return true;
+  }catch(error){
+    console.error('Could not join trip invitation.',error);
+    alert(error.message||'Could not join this trip. Please try again.');
+    return false;
+  }
+}
 async function submitJoinTrip(e){
   e.preventDefault();const raw=$('#join-trip-value').value.trim();if(!raw)return;let code=raw;
   if(raw.includes('?')||/^https?:\/\//i.test(raw)){try{const url=new URL(/^https?:\/\//i.test(raw)?raw:`https://${raw}`);code=url.searchParams.get('invite')||url.searchParams.get('code')||'';if(!code)code=url.pathname.split('/').filter(Boolean).at(-1)||''}catch{}}
   if(!code)return alert('That invite link does not contain an invite code.');
   if(useSupabase){
     const memberTrip=(await getTrips()).find(trip=>String(trip.id)===code||String(trip.invite_code||'').toLowerCase()===code.toLowerCase());
-    if(memberTrip){let trip=memberTrip;try{const {data,error}=await supabase.rpc('join_trip_by_invite',{p_code:memberTrip.invite_code||String(memberTrip.id)});if(!error&&data)trip=Array.isArray(data)?data[0]||memberTrip:data}catch(error){console.warn('Could not claim username-based trip invitation.',error)}await prepareJoinedTrip(trip,true);return}
-    const {data,error}=await supabase.rpc('join_trip_by_invite',{p_code:code});
-    if(error)return alert('We couldn’t find that invite. Check the code or ask the trip owner for a new link.');
-    const joined=Array.isArray(data)?data[0]:data;if(!joined)return alert('We couldn’t find that invite. Check the code or ask the trip owner for a new link.');
-    await prepareJoinedTrip(joined,false);return;
+    if(memberTrip){const trip=await getTrip(memberTrip.id);await completeExistingTrip(trip);return}
+    await beginInviteJoin(code);return;
   }
   const accessible=await getTrip(code);if(accessible)await prepareJoinedTrip(accessible,false);else alert('We couldn’t find a trip with that invite code.');
+}
+async function completeExistingTrip(trip){
+  if(useSupabase){const {data,error}=await supabase.rpc('join_trip_by_invite',{p_code:String(trip.invite_code||trip.id)});if(error)throw error;trip=Array.isArray(data)?data[0]||trip:data||trip}
+  pendingLinkCode='';pendingLinkTrip=null;pendingLinkPeople=[];closeJoinModal();await loadTripDays(trip);document.dispatchEvent(new Event('lakbay:trip-loaded'));document.dispatchEvent(new Event('lakbay:trip-invitation-joined'));switchView('trips')
 }
 function filterTrips(){const q=($('#trip-search-input')?.value||'').trim().toLowerCase(),filter=$('#trip-filter')?.value||'all',today=new Date().toISOString().slice(0,10);document.querySelectorAll('#trip-list .trip-card').forEach(card=>{const queryMatch=(card.dataset.search||'').includes(q),date=card.dataset.tripDate||'',dateMatch=filter==='all'||(filter==='upcoming'&&(!date||date>=today))||(filter==='past'&&!!date&&date<today)||(filter==='planning'&&card.dataset.planned==='false');card.classList.toggle('hidden',!(queryMatch&&dateMatch))})}
 
@@ -1334,7 +1380,10 @@ function mountSettings(){
 }
 let selectedGroupMembers=new Set();
 let tripPeopleCache=[];
+let tripPeopleLoadVersion=0;
+function invalidateTripPeopleCache(){tripPeopleCache=[];tripPeopleLoadVersion+=1}
 async function loadTripPeople(){
+  const requestVersion=++tripPeopleLoadVersion,requestTripId=String(activeTrip?.id||'');
   const users=[];
   if(currentUser)users.push({id:String(currentUser.id),name:discordUsername()||currentUser.user_metadata?.display_name||currentUser.user_metadata?.full_name||'You',avatar:currentUser.user_metadata?.avatar_url||currentUser.user_metadata?.picture||'',guest:false});
   (activeTrip?.public_members||[]).forEach(person=>{if(person?.id&&!users.some(user=>user.id===String(person.id)))users.push({id:String(person.id),name:person.name||'Trip member',avatar:person.avatar||'',guest:false})});
@@ -1343,12 +1392,14 @@ async function loadTripPeople(){
   if(useSupabase&&activeTrip){
     try{
       if(['public_view','public_edit'].includes(activeTrip.visibility)){
-        try{
-          const publicTrip=await getPublicTripView(activeTrip.invite_code||activeTrip.id);
-          (publicTrip?.public_members||[]).forEach(person=>{
-            if(person?.id&&!users.some(user=>user.id===String(person.id)))users.push({id:String(person.id),name:person.name||'Trip member',avatar:person.avatar||'',guest:false});
-          });
-        }catch(error){console.warn('Could not load public trip member details.',error)}
+        if(!Array.isArray(activeTrip.public_members)){
+          try{
+            const publicTrip=await getPublicTripView(activeTrip.invite_code||activeTrip.id);
+            (publicTrip?.public_members||[]).forEach(person=>{
+              if(person?.id&&!users.some(user=>user.id===String(person.id)))users.push({id:String(person.id),name:person.name||'Trip member',avatar:person.avatar||'',guest:false});
+            });
+          }catch(error){console.warn('Could not load public trip member details.',error)}
+        }
       }
       const [{data:owner},{data:members}]=await Promise.all([
         supabase.from('profiles').select('id, username').eq('id',activeTrip.owner_id).maybeSingle(),
@@ -1367,6 +1418,7 @@ async function loadTripPeople(){
   const guests=(readTripData('people',[])||[]).filter(person=>!person.linked_user_id&&!users.some(user=>String(user.id)===String(person.id))).map((person,index)=>({id:String(person.id||`guest-${index}-${person.name}`),name:person.name||'Guest',avatar:person.avatar||'',guest:true}));
   const departed=(readTripData('departed_members',[])||[]).map(person=>({id:String(person.user_id||person.id||''),name:person.name||'Former member',avatar:person.avatar||'',guest:false,left:true})).filter(person=>person.id&&!guests.some(user=>String(user.id)===person.id));
   departed.forEach(person=>{const existing=users.find(user=>String(user.id)===person.id);if(existing){existing.left=true;existing.name=person.name||existing.name}else users.push(person)});
+  if(requestVersion!==tripPeopleLoadVersion||requestTripId!==String(activeTrip?.id||''))return tripPeopleCache;
   tripPeopleCache=[...users,...guests];return tripPeopleCache;
 }
 function openModal(id){const modal=$(`#${id}`);modal?.classList.remove('hidden');modal?.querySelector('input:not([type="hidden"]),select,textarea,button:not(.modal-x):not([data-dismiss-modal])')?.focus()}
@@ -1514,9 +1566,9 @@ async function openMySummaryModal(){
   $('#my-summary-content').innerHTML=`<div class="my-summary-totals"><div><small>Expenses you paid</small><strong>+${money(paidTotal)}</strong></div><div><small>Your expense shares</small><strong>−${money(shareTotal)}</strong></div><div><small>Payments made</small><strong>+${money(paidOut)}</strong></div><div><small>Payments received</small><strong>−${money(received)}</strong></div></div><div class="my-summary-balance"><span>Effective balance</span><strong class="${Math.abs(balance)<=.05?'summary-settled':balance>0?'summary-credit':'summary-debit'}">${balanceLabel}</strong><small>Expenses paid − your shares + payments made − payments received</small></div><section class="my-summary-section"><h3>Expenses you are part of</h3><div class="my-summary-list">${expenseRows.join('')||'<div class="empty-note">No expenses include you yet.</div>'}</div></section><section class="my-summary-section"><h3>Payments made and received</h3><div class="my-summary-list">${paymentRows.join('')||'<div class="empty-note">No payments recorded for you yet.</div>'}</div></section>`;
   openModal('my-summary-modal');
 }
-async function renderOverviewMembers(){
+async function renderOverviewMembers(knownUsers=null){
   const host=$('#overview-members-list');if(!host)return;
-  const users=await loadTripPeople();const groups=normalizeGroups(readTripData('groups',[]));const balances=calculateTripBalances(users);
+  const users=knownUsers||await loadTripPeople();const groups=normalizeGroups(readTripData('groups',[]));const balances=calculateTripBalances(users);
   host.innerHTML=users.filter(user=>!user.left).map(user=>{const balance=balances.get(String(user.id))||0;const settled=Math.abs(balance)<=.05;const status=settled?'settled':balance>0?'owed':'owes';const groupNames=groups.filter(group=>group.members.map(String).includes(String(user.id))).map(group=>group.name);const avatar=user.avatar?`<img src="${safe(user.avatar)}" alt="">`:safe(user.name?.[0]?.toUpperCase()||'?');return `<article class="overview-member-row"><span class="overview-member-avatar ${user.avatar?'has-image':''}">${avatar}</span><span class="overview-member-copy"><b>${safe(user.name)}</b><small>${groupNames.length?safe(groupNames.join(' · ')):'No group'}</small></span><strong class="member-balance ${status}">${settled?'Settled':`${balance>0?'+':'−'}${money(Math.abs(balance))}`}</strong></article>`}).join('')||'<div class="empty-note">No trip members yet.</div>';
 }
 function renderOverviewShowcase(items=forumData()){
@@ -1552,6 +1604,6 @@ async function refreshWorkspace(){
   const publicGuest=!currentUser&&['public_view','public_edit'].includes(activeTrip.visibility);$('#overview-balance').textContent=money(publicGuest?expenses.reduce((sum,row)=>sum+Number(row.amount||0),0):myBalance);$('#overview-balance')?.parentElement?.querySelector('small')?.replaceChildren(document.createTextNode(publicGuest?'Expenses logged':'Your balance'));
   const start=workspaceData().start_date||days.map(day=>day.date).filter(Boolean).sort()[0];
   $('#active-trip-date-copy').textContent=start?new Date(`${start}T00:00:00`).toLocaleDateString(undefined,{month:'long',day:'numeric',year:'numeric'}):'Add trip dates in settings to start your countdown.';
-  updateOverviewCountdown();void renderOverviewMembers();renderOverviewShowcase();
+  updateOverviewCountdown();void renderOverviewMembers(users);renderOverviewShowcase();
   $('#active-trip-overview').classList.remove('hidden');$('.trip-browser-hero')?.classList.add('hidden');$('#trip-list')?.classList.add('hidden');$('.legacy-heading.trip-browser')?.classList.add('hidden');$('#trip-search-controls')?.classList.add('hidden');
 }

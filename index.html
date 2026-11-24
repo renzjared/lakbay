@@ -16,8 +16,8 @@
   <aside class="sidebar w-full md:w-64 bg-white border-b md:border-b-0 md:border-r border-gray-200 p-4 flex flex-row md:flex-col justify-between items-center md:items-start shrink-0 z-20 md:h-full">
     <div class="sidebar-upper">
       <div class="trip-rail" aria-label="Trip servers">
-        <div class="trip-server-list" id="trip-server-list" aria-label="Your trips"></div>
         <button type="button" class="trip-server-add" id="trip-server-add" aria-label="Create a trip" title="Create a trip">＋</button>
+        <div class="trip-server-list" id="trip-server-list" aria-label="Your trips"></div>
       </div>
       <div class="sidebar-content">
 
@@ -70,15 +70,14 @@
     <!-- VIEW: Trips List -->
     <div id="trips-view" class="view-section view-dashboard p-4 sm:p-8 mx-auto">
       <div class="flex justify-between items-center mb-6">
-        <h2 class="text-2xl font-extrabold text-[#4b4b4b]">Upcoming Adventures</h2>
-        <button id="add-trip-btn" class="bg-[#58cc02] text-white px-4 py-2 rounded-xl font-bold uppercase hover:bg-[#58a700] transition-colors shadow-sm active:translate-y-1">+ New</button>
+        <h2 class="text-2xl font-extrabold text-[#4b4b4b]">Your trips</h2>
       </div>
       <div id="trip-list" class="space-y-4"></div>
     </div>
 
     <!-- VIEW: Days -->
     <div id="days-view" class="view-section itinerary-page hidden">
-      <header class="plan-page-head"><div><h1>Itinerary</h1><p id="days-trip-title">Build and review the trip schedule.</p></div><div class="plan-page-actions"><button id="share-trip-btn" class="light-button">Share trip</button><button id="add-day-btn" class="action-button">＋ Add day</button></div></header>
+      <header class="plan-page-head"><div><h1>Itinerary</h1><p id="days-trip-title">Build and review the trip schedule.</p></div><div class="plan-page-actions"><button id="share-trip-btn" class="light-button share-trigger-button">Share trip</button><button id="add-day-btn" class="action-button">＋ Add day</button></div></header>
       <div class="itinerary-workspace"><aside class="day-selector-panel"><div class="panel-heading"><h2>Days</h2><span id="itinerary-day-count">0</span></div><div id="days-list" class="days-list"></div></aside><section class="day-preview-panel"><div class="day-preview-heading"><div><h2 id="preview-day-title">Select a day</h2><p id="preview-day-date">Choose a day to view its route.</p></div><button type="button" id="edit-preview-day" class="light-button hidden">Edit day</button></div><div id="itinerary-map" class="itinerary-map"><div class="map-empty-state">Select a day to preview its stops and route.</div></div><div class="day-stops-heading"><h3>Stops in order</h3><button type="button" id="preview-add-activity" class="light-button hidden">＋ Add stop</button></div><div id="day-stops-preview" class="day-stops-preview"></div></section></div>
     </div>
 
@@ -169,22 +168,40 @@
   </nav>
 
   <!-- MODALS -->
-  <div id="modal-backdrop" class="fixed inset-0 bg-black bg-opacity-40 hidden flex items-end sm:items-center justify-center z-50">
-    <div id="add-trip-modal" class="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 transform translate-y-full transition-transform duration-300 shadow-2xl">
-      <h2 class="text-2xl font-bold mb-4 text-[#4b4b4b]">Where to?</h2>
-      <div class="flex gap-3 mb-4">
-        <div class="w-20 shrink-0">
-          <label class="text-xs font-bold text-gray-400 uppercase tracking-wider pl-1">Icon</label>
-          <input type="text" id="trip-emoji" value="✈️" maxlength="2" class="w-full bg-[#f7f7f7] border-2 border-[#e5e5e5] rounded-xl p-4 text-2xl outline-none focus:border-[#1cb0f6] text-center">
+  <div id="modal-backdrop" class="lakbay-modal-backdrop hidden" data-close-modal>
+    <section id="add-trip-modal" class="lakbay-modal create-trip-dialog" role="dialog" aria-modal="true" aria-labelledby="create-trip-title">
+      <button type="button" id="close-modal-btn" class="modal-x" aria-label="Close">×</button>
+      <div class="create-trip-progress" aria-live="polite"><span id="create-trip-step-count">Step 1 of 3</span><div class="create-trip-progress-track"><i id="create-trip-progress-value"></i></div></div>
+      <div class="create-trip-step" data-create-step="1">
+        <h2 id="create-trip-title">Where are you going?</h2>
+        <p>Name the trip and choose an icon.</p>
+        <div class="create-trip-basics">
+          <label class="create-trip-icon-field">Trip icon<input type="text" id="trip-emoji" value="✈️" maxlength="8" autocomplete="off" aria-label="Trip icon or emoji"></label>
+          <label class="create-trip-destination-field">Trip name<input type="text" id="trip-destination" placeholder="Tokyo, Japan" maxlength="100" autocomplete="off" required></label>
         </div>
-        <div class="flex-1">
-          <label class="text-xs font-bold text-gray-400 uppercase tracking-wider pl-2">Destination</label>
-          <input type="text" id="trip-destination" placeholder="Tokyo, Japan" class="w-full bg-[#f7f7f7] border-2 border-[#e5e5e5] rounded-xl p-4 text-lg font-bold outline-none focus:border-[#1cb0f6] transition-colors placeholder-gray-400">
+        <label class="create-trip-image-field">Trip image URL <span class="optional-label">Optional</span><input type="url" id="trip-icon-url" placeholder="https://…" autocomplete="url"></label>
+      </div>
+      <div class="create-trip-step hidden" data-create-step="2">
+        <h2 id="create-trip-dates-title">When are you going?</h2>
+        <p>Add dates now or leave them blank to decide later.</p>
+        <div class="two-fields create-trip-dates"><label>Start date<input type="date" id="trip-start-date"></label><label>End date<input type="date" id="trip-end-date"></label></div>
+      </div>
+      <div class="create-trip-step hidden" data-create-step="3">
+        <h2 id="create-trip-access-title">Who can access it?</h2>
+        <p>You can change access at any time in trip settings.</p>
+        <div class="create-trip-access-options" role="radiogroup" aria-label="Trip access">
+          <label class="create-trip-access-option is-selected"><input type="radio" name="trip-visibility" value="private" checked><span><strong>Restricted</strong><small>Only people you invite can join.</small></span><i aria-hidden="true">✓</i></label>
+          <label class="create-trip-access-option"><input type="radio" name="trip-visibility" value="public_view"><span><strong>Anyone with the link can view</strong><small>Joining is required to use trip controls.</small></span><i aria-hidden="true">✓</i></label>
+          <label class="create-trip-access-option"><input type="radio" name="trip-visibility" value="public_edit"><span><strong>Anyone with the link can edit</strong><small>Anyone with the link can join as a trip member.</small></span><i aria-hidden="true">✓</i></label>
         </div>
       </div>
-      <button id="save-trip-btn" class="duo-btn duo-btn-secondary w-full text-lg py-3 rounded-2xl font-bold uppercase tracking-wide">Let's Go!</button>
-      <button id="close-modal-btn" class="mt-4 w-full text-center text-gray-400 font-bold uppercase tracking-wide py-2">Cancel</button>
-    </div>
+      <div class="create-trip-actions">
+        <button type="button" id="create-trip-back" class="light-button hidden">Back</button>
+        <button type="button" id="create-trip-cancel" class="light-button">Cancel</button>
+        <button type="button" id="save-trip-btn" class="action-button">Continue</button>
+      </div>
+      <div class="create-trip-join-section"><div><strong>Have an invite already?</strong><span>Join a trip someone shared with you.</span></div><button type="button" id="create-trip-join-btn" class="light-button">Join a trip</button></div>
+    </section>
   </div>
 
   <div id="day-backdrop" class="lakbay-modal-backdrop hidden" data-close-modal>
@@ -252,34 +269,33 @@
     <div id="share-modal" class="lakbay-modal share-dialog" role="dialog" aria-modal="true" aria-labelledby="share-modal-title">
       <button type="button" class="modal-x" id="share-modal-x" aria-label="Close">×</button>
       <h2 id="share-modal-title">Share trip</h2><p>Invite trip members and choose who can view the itinerary.</p>
-      <div class="mb-2">
-        <div class="flex gap-2">
-          <input type="text" id="invite-username" placeholder="Add by Discord username..." class="flex-1 bg-[#f7f7f7] border-2 border-[#e5e5e5] rounded-xl p-3 font-bold outline-none focus:border-[#1cb0f6]">
-          <select id="invite-role" class="bg-[#f7f7f7] border-2 border-[#e5e5e5] rounded-xl p-3 font-bold outline-none focus:border-[#1cb0f6] w-28">
+      <div class="share-invite-section">
+        <div class="share-invite-row">
+          <input type="text" id="invite-username" placeholder="Discord username" class="share-field">
+          <select id="invite-role" class="share-field share-role-select" aria-label="Role for invited person">
             <option value="viewer">Viewer</option>
             <option value="editor">Editor</option>
           </select>
-          <button id="send-invite-btn" class="bg-[#58cc02] text-white px-6 rounded-xl font-bold hover:bg-[#58a700] transition-colors">Share</button>
+          <button id="send-invite-btn" class="action-button share-send-button">Share</button>
         </div>
-        <p id="invite-warning" class="text-xs text-amber-500 font-bold mt-2 hidden">⚠️ User hasn't joined Lakbay yet, but they will be added once they log in!</p>
+        <p id="invite-warning" class="share-warning hidden">This person will be added when they join Lakbay.</p>
       </div>
       <h3 class="share-section-title">People with access</h3>
       <div id="collaborators-list" class="space-y-2 overflow-y-auto mb-6 flex-1 min-h-[100px]"></div>
       <h3 class="share-section-title">General access</h3>
-      <div class="bg-gray-50 rounded-xl p-3 flex gap-3 items-center border-2 border-gray-100 mb-6">
-        <div id="ga-icon" class="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-xl shrink-0">🔒</div>
-        <div class="flex-1">
-          <select id="share-visibility" class="font-bold text-[#4b4b4b] bg-transparent outline-none cursor-pointer w-full appearance-none">
+      <div class="share-access-card">
+        <div id="ga-icon" class="share-access-icon" aria-hidden="true">🔒</div>
+        <div class="share-access-control">
+          <select id="share-visibility" class="share-visibility-select" aria-label="General access">
             <option value="private">Restricted</option>
             <option value="public_view">Anyone with the link can view</option>
             <option value="public_edit">Anyone with the link can edit</option>
           </select>
-          <p id="ga-desc" class="text-xs text-gray-400 font-bold mt-1">Only added people can access</p>
         </div>
       </div>
-      <div class="flex justify-between items-center pt-4 border-t-2 border-gray-100">
-        <button id="copy-link-btn" class="text-[#1cb0f6] font-bold px-4 py-2 rounded-xl hover:bg-[#e5f7ff] transition-colors flex items-center gap-2">🔗 Copy link</button>
-        <button id="close-share-btn" class="bg-[#58cc02] text-white px-8 py-2 rounded-xl font-bold hover:bg-[#58a700] transition-colors shadow-sm">Done</button>
+      <div class="share-dialog-footer">
+        <button id="copy-link-btn" class="light-button share-copy-button" type="button">Copy link</button>
+        <button id="close-share-btn" class="action-button share-done-button" type="button">Done</button>
       </div>
     </div>
   </div>
@@ -288,7 +304,8 @@
     <div class="bg-white w-full max-w-sm rounded-3xl p-6 text-center shadow-2xl transform scale-95 transition-transform duration-300" id="invite-popup-card">
       <div class="text-5xl mb-4">💌</div>
       <h2 class="text-xl font-extrabold text-[#4b4b4b] mb-2" id="invite-popup-message">Join this trip?</h2>
-      <p id="invite-popup-owner" class="text-sm text-gray-500 font-bold mb-4"></p>
+      <div class="invite-organizer"><img id="invite-popup-owner-avatar" class="hidden" alt=""><p id="invite-popup-owner" class="text-sm text-gray-500 font-bold"></p></div>
+      <div id="invite-trip-countdown" class="invite-trip-countdown hidden"><strong id="invite-countdown-value"></strong><small>Until trip start</small></div>
       <div id="invite-trip-details" class="invite-trip-details"></div>
       <p id="invite-popup-hint" class="text-sm text-gray-500 font-bold my-5">Would you like to join this trip?</p>
       <div class="invite-popup-actions">

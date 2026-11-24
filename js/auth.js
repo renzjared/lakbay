@@ -3,6 +3,33 @@ import { loadTripDays } from './itinerary.js';
 import { switchView } from './ui.js';
 
 export let currentUser = null;
+let inviteCountdownTimer = null;
+let publicTripPreviewSequence = 0;
+
+const OAUTH_ERROR_PARAMS = ['error', 'error_description', 'error_code'];
+function removeOAuthErrorParams(url) {
+  let changed = false;
+  for (const key of OAUTH_ERROR_PARAMS) {
+    if (url.searchParams.has(key)) { url.searchParams.delete(key); changed = true; }
+  }
+  if (url.hash.length > 1) {
+    const hashParams = new URLSearchParams(url.hash.slice(1));
+    let hashChanged = false;
+    for (const key of OAUTH_ERROR_PARAMS) {
+      if (hashParams.has(key)) { hashParams.delete(key); hashChanged = true; }
+    }
+    if (hashChanged) { url.hash = hashParams.size ? hashParams.toString() : ''; changed = true; }
+  }
+  return changed;
+}
+function cleanCallbackAddress(url, { removeCode = false, removeHash = false } = {}) {
+  let changed = removeOAuthErrorParams(url);
+  if (removeCode && (url.searchParams.has('code') || url.searchParams.has('state'))) {
+    url.searchParams.delete('code'); url.searchParams.delete('state'); changed = true;
+  }
+  if (removeHash && url.hash) { url.hash = ''; changed = true; }
+  if (changed) window.history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`);
+}
 
 const DOM = {
   loginBtn: document.getElementById('login-discord-btn'),
@@ -16,6 +43,13 @@ const DOM = {
 export async function initAuth() {
   if (!useSupabase) return;
 
+  const callbackUrl = new URL(window.location.href);
+  const initialHashParams = new URLSearchParams(callbackUrl.hash.slice(1));
+  const callbackError = callbackUrl.searchParams.get('error_description') || callbackUrl.searchParams.get('error') || initialHashParams.get('error_description') || initialHashParams.get('error');
+  // Remove stale provider errors before supabase-js examines the URL. Keep the
+  // invite and PKCE code parameters intact so the intended callback can finish.
+  if (removeOAuthErrorParams(callbackUrl)) window.history.replaceState({}, document.title, `${callbackUrl.pathname}${callbackUrl.search}${callbackUrl.hash}`);
+
   // Defer application work until Supabase releases its auth lock. Auth callbacks
   // must stay synchronous because handleSession may make additional API calls.
   supabase.auth.onAuthStateChange((_event, session) => {
@@ -23,7 +57,6 @@ export async function initAuth() {
   });
 
   let { data: { session }, error: sessionError } = await supabase.auth.getSession();
-  const callbackUrl = new URL(window.location.href);
   const authCode = callbackUrl.searchParams.get('code');
   if (!session && authCode) {
     try {
@@ -31,19 +64,35 @@ export async function initAuth() {
       session = result.data?.session || null;
       sessionError = result.error || sessionError;
       if (session) {
-        callbackUrl.searchParams.delete('code');
-        window.history.replaceState({}, document.title, `${callbackUrl.pathname}${callbackUrl.search}${callbackUrl.hash}`);
+        cleanCallbackAddress(new URL(window.location.href), { removeCode: true, removeHash: true });
       }
     } catch (error) {
       sessionError = error;
     }
+  }
+  if (session) {
+    window.lakbayAuthErrorMessage = '';
+    cleanCallbackAddress(new URL(window.location.href), { removeCode: true, removeHash: true });
+  } else if (callbackError) {
+    window.lakbayAuthErrorMessage = 'Discord sign-in was denied or canceled. Try again. If you approved the request, check that Lakbay is still authorized in Discord.';
+    cleanCallbackAddress(new URL(window.location.href), { removeCode: true, removeHash: true });
+  } else if (sessionError) {
+    window.lakbayAuthErrorMessage = 'Your sign-in could not be restored. Please try Discord sign-in again.';
+    cleanCallbackAddress(new URL(window.location.href), { removeCode: true, removeHash: true });
   }
   if (sessionError) console.error('Could not restore the Discord sign-in session.', sessionError);
   await handleSession(session);
 
   const login = async () => {
     try {
-      const redirectUrl = `${window.location.origin}${window.location.pathname}${window.location.search}`;
+      window.lakbayAuthErrorMessage = '';
+      document.querySelector('.auth-inline-notice')?.remove();
+      const redirect = new URL(window.location.href);
+      removeOAuthErrorParams(redirect);
+      redirect.searchParams.delete('code');
+      redirect.searchParams.delete('state');
+      redirect.hash = '';
+      const redirectUrl = `${redirect.origin}${redirect.pathname}${redirect.search}`;
       const { error } = await supabase.auth.signInWithOAuth({ provider: 'discord', options: { redirectTo: redirectUrl } });
       if (error) throw error;
     } catch (error) {
@@ -70,6 +119,7 @@ export async function initAuth() {
 async function handleSession(session) {
   document.getElementById('mobile-login-inline')?.classList.toggle('hidden', !!session);
   if (session) {
+    window.lakbayAuthErrorMessage = '';
     currentUser = session.user;
     DOM.loginBtn.classList.add('hidden');
     DOM.mobileLoginBtn.classList.add('hidden');
@@ -100,16 +150,13 @@ async function checkUrlForInvites() {
     if (!preview) return;
 
     if (sessionStorage.getItem('lakbay_public_invite_preview') === String(code) && ['public_view','public_edit'].includes(preview.visibility)) {
-      const tripView = await getPublicTripView(code);
-      if (tripView) {
+      const rawTripView = await getPublicTripView(code);
+      if (rawTripView) {
+        const tripView = completePublicTripView(rawTripView, preview, code);
         await loadTripDays(tripView);
         document.dispatchEvent(new Event('lakbay:trip-loaded'));
         showPersistentInviteBar(preview, code);
-        switchView('trips');
-        if(sessionStorage.getItem('lakbay_invite_accept_pending')==='true'){
-          sessionStorage.removeItem('lakbay_invite_accept_pending');
-          await joinTripFromInvite(code);
-        }
+        switchView(window.lakbayCurrentView || 'trips');
         return;
       }
     }
@@ -153,42 +200,71 @@ function showTripInvitePrompt(trip, code, fromLink) {
   const isPublic = ['public_view', 'public_edit'].includes(trip.visibility);
   const start = trip.start_date || trip.workspace_data?.start_date || null;
   const end = trip.end_date || trip.workspace_data?.end_date || null;
-  const dayCount = Number(trip.day_count ?? trip.days?.length ?? 0);
   const name = trip.destination || 'this trip';
   document.getElementById('invite-popup-message').textContent = `Join ${name}?`;
   document.getElementById('invite-popup-owner').textContent = `Organized by ${trip.owner_name || 'Trip organizer'}`;
+  const ownerAvatar = document.getElementById('invite-popup-owner-avatar');
+  const ownerAvatarUrl = safeAvatarUrl(trip.owner_avatar || trip.owner_avatar_url);
+  ownerAvatar.classList.toggle('hidden', !ownerAvatarUrl);
+  ownerAvatar.removeAttribute('src');
+  ownerAvatar.onerror = () => ownerAvatar.classList.add('hidden');
+  if (ownerAvatarUrl) ownerAvatar.src = ownerAvatarUrl;
   document.getElementById('invite-popup-hint').textContent = currentUser
     ? 'Join to access the forum and trip controls.'
     : 'Join to access the forum and trip controls. Discord sign-in is required.';
 
   const details = document.getElementById('invite-trip-details');
   details.replaceChildren();
-  const facts = [];
-  if (start && end) facts.push(`${formatDate(start)} – ${formatDate(end)}`);
-  else if (start) facts.push(`Starts ${formatDate(start)}`);
-  if (start) facts.push(countdownLabel(start, end));
-  if (dayCount) facts.push(`${dayCount} planned ${dayCount === 1 ? 'day' : 'days'}`);
-  (facts.length ? facts : ['Trip details are ready to view after joining.']).forEach(fact => {
-    const item = document.createElement('span');
-    item.textContent = fact;
-    details.append(item);
-  });
+  const dateRange = start && end ? `${formatDate(start)} – ${formatDate(end)}` : start ? `Starts ${formatDate(start)}` : end ? `Ends ${formatDate(end)}` : 'Dates not set';
+  details.textContent = dateRange;
+  const countdown = document.getElementById('invite-trip-countdown');
+  countdown.classList.toggle('hidden', !start);
+  if (inviteCountdownTimer) clearInterval(inviteCountdownTimer);
+  if (start) {
+    const update = () => updateInviteCountdown(start, end);
+    update();
+    inviteCountdownTimer = window.setInterval(update, 1000);
+  }
 
   const viewButton = document.getElementById('view-public-trip-btn');
   viewButton.classList.toggle('hidden', !isPublic);
   viewButton.onclick = async () => {
+    if (viewButton.disabled) return;
+    viewButton.disabled = true;
+    viewButton.textContent = 'Opening…';
+    closeInvitePrompt();
+    const inviteCode = code || trip.invite_code || String(trip.id);
+    const sequence = ++publicTripPreviewSequence;
+    const previewShell = completePublicTripView({
+      id: trip.id, owner_id: trip.owner_id, visibility: trip.visibility,
+      days: [], workspace_data: { start_date: start, end_date: end, food: { ingredients: [], recipes: [] }, expenses: [], payments: [], forum: [] }
+    }, trip, inviteCode);
+    document.getElementById('active-trip-title').textContent=previewShell.destination||'Your trip';
+    document.getElementById('active-trip-emoji').textContent=previewShell.emoji||'✈️';
+    document.getElementById('active-trip-date-copy').textContent=start?formatDate(start):'Shared trip preview';
+    document.getElementById('overview-day-count').textContent='0 days';
+    const shellLoad = loadTripDays(previewShell);
+    document.dispatchEvent(new Event('lakbay:trip-preview-shell'));
+    switchView(window.lakbayCurrentView || 'trips');
+    showPersistentInviteBar(trip, inviteCode, { loading: true });
+    void shellLoad.catch(error => console.warn('Could not initialize trip preview shell.', error));
     try {
-      const tripView = await getPublicTripView(trip.invite_code || code || String(trip.id));
-      if (!tripView) throw new Error('This trip is not available for public viewing.');
+      const rawTripView = await promiseWithTimeout(getPublicTripView(trip.invite_code || code || String(trip.id)), 15000, 'The trip preview is taking too long to load. Check your connection and retry.');
+      if (sequence !== publicTripPreviewSequence) return;
+      if (!rawTripView) throw new Error('This trip is not available for public viewing.');
+      const tripView = completePublicTripView(rawTripView, trip, code);
       await loadTripDays(tripView);
-      sessionStorage.setItem('lakbay_public_invite_preview',String(code || trip.invite_code || trip.id));
-      closeInvitePrompt();
+      sessionStorage.setItem('lakbay_public_invite_preview', String(inviteCode));
       document.dispatchEvent(new Event('lakbay:trip-loaded'));
-      switchView('trips');
-      showPersistentInviteBar(trip,code || trip.invite_code || String(trip.id));
+      switchView(window.lakbayCurrentView || 'trips');
+      showPersistentInviteBar(trip, inviteCode);
     } catch (error) {
+      if (sequence !== publicTripPreviewSequence) return;
       console.error('Could not open public trip view.', error);
-      alert(error.message || 'Could not open this trip.');
+      showPersistentInviteBar(trip, inviteCode, { error: error.message || 'Could not load the full trip preview. You can retry or accept the invite.' });
+    } finally {
+      viewButton.disabled = false;
+      viewButton.textContent = 'View trip';
     }
   };
 
@@ -204,50 +280,88 @@ function showTripInvitePrompt(trip, code, fromLink) {
   document.getElementById('invite-popup-backdrop').classList.remove('hidden');
 }
 
+function completePublicTripView(view, invitation, code) {
+  return {
+    ...view,
+    invite_code: view.invite_code || invitation.invite_code || String(code || invitation.id || view.id),
+    visibility: view.visibility || invitation.visibility || 'public_view',
+    owner_name: view.owner_name || invitation.owner_name || 'Trip organizer',
+    owner_avatar: view.owner_avatar || invitation.owner_avatar || '',
+    workspace_data: {
+      ...(view.workspace_data || {}),
+      start_date: view.workspace_data?.start_date || view.start_date || invitation.start_date || null,
+      end_date: view.workspace_data?.end_date || view.end_date || invitation.end_date || null
+    },
+    days: Array.isArray(view.days) ? view.days : []
+  };
+}
+
+function updateInviteCountdown(start, end) {
+  const value = document.getElementById('invite-countdown-value');
+  if (!value) return;
+  const remaining = new Date(`${start}T00:00:00`).getTime() - Date.now();
+  if (remaining <= 0) {
+    const tripEnd = end ? new Date(`${end}T23:59:59`).getTime() : null;
+    value.textContent = tripEnd && Date.now() <= tripEnd ? 'Trip in progress' : 'Trip started';
+    return;
+  }
+  const seconds = Math.floor(remaining / 1000);
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainder = seconds % 60;
+  value.textContent = `${days}d ${String(hours).padStart(2, '0')}h ${String(minutes).padStart(2, '0')}m ${String(remainder).padStart(2, '0')}s`;
+}
+
+function safeAvatarUrl(value) {
+  try {
+    const url = new URL(value, window.location.href);
+    return ['https:', 'http:'].includes(url.protocol) ? url.href : '';
+  } catch { return ''; }
+}
+
 async function joinTripFromInvite(code) {
   const button = document.getElementById('accept-invite-btn');
-  button.disabled = true;
-  button.textContent = 'Joining…';
+  if(button){button.disabled = true;button.textContent = 'Checking…'}
   try {
-    const { data, error } = await supabase.rpc('join_trip_by_invite', { p_code: String(code) });
-    if (error) throw error;
-    const trip = Array.isArray(data) ? data[0] : data;
-    if (!trip) throw new Error('The invitation could not be found.');
-    removeInviteFromUrl();
-    sessionStorage.removeItem('lakbay_public_invite_preview');
-    sessionStorage.removeItem('lakbay_invite_accept_pending');
-    document.getElementById('public-trip-invite-bar')?.remove();
-    document.body.classList.remove('has-public-trip-invite');
-    const nickname = prompt(`Choose a name to use in ${trip.destination}, or leave blank to use your Discord name.`, '');
-    const profileUpdates = {};
-    if (nickname?.trim()) profileUpdates.display_name = nickname.trim();
-    const avatar = prompt('Paste a profile photo URL if you want to use a different picture, or leave blank to keep your Discord photo.', '');
-    if (avatar?.trim()) profileUpdates.avatar_url = avatar.trim();
-    if (Object.keys(profileUpdates).length) await supabase.auth.updateUser({ data: profileUpdates });
-    await loadTripDays(trip);
-    closeInvitePrompt();
-    document.dispatchEvent(new Event('lakbay:trip-loaded'));
-    switchView('trips');
+    if(typeof window.lakbayJoinTripByInvite!=='function')throw new Error('Trip joining is still loading. Please try again.');
+    await window.lakbayJoinTripByInvite(String(code));
   } catch (error) {
     console.error('Could not join trip.', error);
     alert(error.message || 'Could not join this trip. Please try again.');
   } finally {
-    button.disabled = false;
-    button.textContent = currentUser ? 'Join trip' : 'Sign in to join';
+    if(button){button.disabled = false;button.textContent = currentUser ? 'Join trip' : 'Sign in to join'}
   }
 }
 
-function showPersistentInviteBar(trip, code) {
+document.addEventListener('lakbay:trip-invitation-joined',()=>{
+  removeInviteFromUrl();
+  sessionStorage.removeItem('lakbay_public_invite_preview');
+  sessionStorage.removeItem('lakbay_invite_accept_pending');
+  document.getElementById('public-trip-invite-bar')?.remove();
+  document.body.classList.remove('has-public-trip-invite');
+  closeInvitePrompt();
+});
+
+function showPersistentInviteBar(trip, code, state = {}) {
   let bar=document.getElementById('public-trip-invite-bar');
   if(!bar){bar=document.createElement('aside');bar.id='public-trip-invite-bar';bar.className='public-trip-invite-bar';bar.setAttribute('aria-label','Trip invitation');document.body.append(bar)}
   const start=trip.start_date||trip.workspace_data?.start_date||null,end=trip.end_date||trip.workspace_data?.end_date||null;
   document.body.classList.add('has-public-trip-invite');
+  document.dispatchEvent(new Event('lakbay:public-invite-preview'));
   const days=Number(trip.day_count??trip.days?.length??0),facts=[];
   if(start&&end)facts.push(`${formatDate(start)} – ${formatDate(end)}`);else if(start)facts.push(`Starts ${formatDate(start)}`);
   if(start)facts.push(countdownLabel(start,end));if(days)facts.push(`${days} planned ${days===1?'day':'days'}`);
-  bar.innerHTML=`<div class="invite-bar-copy"><strong>Trip preview: ${escapeHTML(trip.destination||'Shared trip')}</strong><span>Shared by ${escapeHTML(trip.owner_name||'Trip organizer')}${facts.length?` · ${escapeHTML(facts.join(' · '))}`:''}</span></div><div class="invite-bar-actions"><button type="button" class="light-button" data-invite-discard>Discard</button><button type="button" class="action-button" data-invite-accept>${currentUser?'Accept invitation':'Sign in to accept'}</button></div>`;
-  bar.querySelector('[data-invite-accept]').onclick=async()=>{if(!currentUser){sessionStorage.setItem('lakbay_public_invite_preview',String(code));sessionStorage.setItem('lakbay_invite_accept_pending','true');DOM.loginBtn.click();return}await joinTripFromInvite(code)};
-  bar.querySelector('[data-invite-discard]').onclick=()=>showDiscardInviteConfirmation(()=>{sessionStorage.removeItem('lakbay_public_invite_preview');removeInviteFromUrl();bar.remove();document.body.classList.remove('has-public-trip-invite');window.location.reload()});
+  const status=state.error|| (state.loading?'Loading trip details…':facts.join(' · '));
+  bar.innerHTML=`<div class="invite-bar-copy"><strong>Trip preview: ${escapeHTML(trip.destination||'Shared trip')}</strong><span>${state.error?escapeHTML(status):`Shared by ${escapeHTML(trip.owner_name||'Trip organizer')}${status?` · ${escapeHTML(status)}`:''}`}</span></div><div class="invite-bar-actions">${state.error?'<button type="button" class="light-button" data-invite-retry>Retry</button>':''}<button type="button" class="light-button" data-invite-discard ${state.loading?'disabled':''}>Discard</button><button type="button" class="action-button" data-invite-accept ${state.loading?'disabled':''}>${state.loading?'Loading…':currentUser?'Accept invitation':'Sign in to accept'}</button></div>`;
+  bar.querySelector('[data-invite-accept]').onclick=async()=>{if(state.loading)return;if(!currentUser){sessionStorage.setItem('lakbay_public_invite_preview',String(code));sessionStorage.setItem('lakbay_invite_accept_pending','true');DOM.loginBtn.click();return}await joinTripFromInvite(code)};
+  bar.querySelector('[data-invite-discard]').onclick=()=>{if(state.loading)return;showDiscardInviteConfirmation(()=>{sessionStorage.removeItem('lakbay_public_invite_preview');removeInviteFromUrl();bar.remove();document.body.classList.remove('has-public-trip-invite');window.location.reload()})};
+  bar.querySelector('[data-invite-retry]')?.addEventListener('click',()=>showTripInvitePrompt(trip,code,true));
+}
+
+function promiseWithTimeout(promise, milliseconds, message){
+  let timer;
+  return Promise.race([promise,new Promise((_,reject)=>{timer=window.setTimeout(()=>reject(new Error(message)),milliseconds)})]).finally(()=>window.clearTimeout(timer));
 }
 
 function showDiscardInviteConfirmation(onDiscard){
@@ -260,6 +374,8 @@ function escapeHTML(value){return String(value??'').replace(/[&<>"']/g,char=>({'
 
 function closeInvitePrompt() {
   document.getElementById('invite-popup-backdrop').classList.add('hidden');
+  if (inviteCountdownTimer) clearInterval(inviteCountdownTimer);
+  inviteCountdownTimer = null;
 }
 
 function removeInviteFromUrl() {

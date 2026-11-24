@@ -90,26 +90,78 @@ function setupEventListeners() {
   const modal = {
     bg: document.getElementById('modal-backdrop'), card: document.getElementById('add-trip-modal'),
     emoji: document.getElementById('trip-emoji'), dest: document.getElementById('trip-destination'),
+    iconUrl: document.getElementById('trip-icon-url'), start: document.getElementById('trip-start-date'), end: document.getElementById('trip-end-date'),
+    stepCount: document.getElementById('create-trip-step-count'), progress: document.getElementById('create-trip-progress-value'),
+    backBtn: document.getElementById('create-trip-back'), cancelBtn: document.getElementById('create-trip-cancel'),
     saveBtn: document.getElementById('save-trip-btn'), closeBtn: document.getElementById('close-modal-btn')
   };
 
-  document.getElementById('add-trip-btn').onclick = () => { 
-    if(useSupabase && !currentUser) return alert("Please log in to create trips!");
-    playClick(); modal.bg.classList.remove('hidden'); setTimeout(() => modal.card.classList.remove('translate-y-full'), 10); 
+  let createStep = 1;
+  const setCreateStep = step => {
+    createStep = Math.max(1, Math.min(3, step));
+    document.querySelectorAll('[data-create-step]').forEach(panel => panel.classList.toggle('hidden', Number(panel.dataset.createStep) !== createStep));
+    modal.card.setAttribute('aria-labelledby', ['create-trip-title', 'create-trip-dates-title', 'create-trip-access-title'][createStep - 1]);
+    modal.stepCount.textContent = `Step ${createStep} of 3`;
+    modal.progress.style.width = `${createStep / 3 * 100}%`;
+    modal.backBtn.classList.toggle('hidden', createStep === 1);
+    modal.cancelBtn.classList.toggle('hidden', createStep > 1);
+    modal.saveBtn.textContent = createStep === 3 ? 'Create trip' : 'Continue';
+    if (createStep === 1) modal.dest.focus();
   };
-  modal.closeBtn.onclick = () => { playClick(); modal.card.classList.add('translate-y-full'); setTimeout(() => modal.bg.classList.add('hidden'), 300); };
+  const openCreateTrip = () => {
+    if(useSupabase && !currentUser) return alert('Please sign in with Discord before creating a trip.');
+    modal.dest.value = '';
+    modal.dest.setCustomValidity('');
+    modal.emoji.value = '✈️';
+    modal.iconUrl.value = '';
+    modal.start.value = '';
+    modal.end.value = '';
+    modal.start.removeAttribute('min'); modal.start.removeAttribute('max');
+    modal.end.removeAttribute('min'); modal.end.removeAttribute('max'); modal.end.setCustomValidity('');
+    document.querySelector('input[name="trip-visibility"][value="private"]').checked = true;
+    document.querySelectorAll('.create-trip-access-option').forEach(option => option.classList.toggle('is-selected', option.querySelector('input').checked));
+    modal.saveBtn.disabled = false;
+    setCreateStep(1);
+    modal.bg.classList.remove('hidden');
+  };
+  document.addEventListener('lakbay:create-trip-requested', openCreateTrip);
+  const closeCreateTrip = () => { modal.bg.classList.add('hidden'); };
+  modal.closeBtn.onclick = closeCreateTrip;
+  modal.cancelBtn.onclick = closeCreateTrip;
+  document.getElementById('create-trip-join-btn')?.addEventListener('click',()=>{closeCreateTrip();document.dispatchEvent(new Event('lakbay:open-join-trip'))});
+  modal.backBtn.onclick = () => setCreateStep(createStep - 1);
+  document.querySelectorAll('.create-trip-access-option input').forEach(input => input.addEventListener('change', () => {
+    document.querySelectorAll('.create-trip-access-option').forEach(option => option.classList.toggle('is-selected', option.querySelector('input').checked));
+  }));
+  modal.start.addEventListener('change', () => { if (modal.start.value) modal.end.min = modal.start.value; else modal.end.removeAttribute('min'); });
+  modal.end.addEventListener('change', () => { if (modal.end.value) modal.start.max = modal.end.value; else modal.start.removeAttribute('max'); });
   modal.saveBtn.onclick = async () => {
-    const dest = modal.dest.value.trim(); if (!dest) return alert("Please enter a destination!");
+    if (createStep === 1) {
+      if (!modal.dest.value.trim()) { modal.dest.setCustomValidity('Enter a name for this trip.'); modal.dest.reportValidity(); modal.dest.addEventListener('input', () => modal.dest.setCustomValidity(''), { once: true }); return; }
+      if (modal.iconUrl.value.trim() && !modal.iconUrl.checkValidity()) { modal.iconUrl.reportValidity(); return; }
+      setCreateStep(2); return;
+    }
+    if (createStep === 2) {
+      if (modal.start.value && modal.end.value && modal.end.value < modal.start.value) { modal.end.setCustomValidity('The end date must be on or after the start date.'); modal.end.reportValidity(); return; }
+      modal.end.setCustomValidity('');
+      setCreateStep(3); return;
+    }
+    const dest = modal.dest.value.trim();
+    const options = {
+      iconUrl: modal.iconUrl.value.trim(), startDate: modal.start.value || null, endDate: modal.end.value || null,
+      visibility: document.querySelector('input[name="trip-visibility"]:checked')?.value || 'private'
+    };
     playClick();
     modal.saveBtn.disabled = true;
     modal.saveBtn.textContent = 'Creating…';
     let created = null;
     try {
-      created = await createTrip(modal.emoji.value || '📍', dest);
+      created = await createTrip(modal.emoji.value || '📍', dest, options);
       if (!created) throw new Error('Supabase did not return the new trip.');
       playSuccess();
       showToast(`Trip created · ${dest}`);
-      modal.closeBtn.click();
+      closeCreateTrip();
+      modal.dest.value = '';
       await renderTripList();
       try {
         await loadTripDays(created);
@@ -133,7 +185,7 @@ function setupEventListeners() {
       }
     } finally {
       modal.saveBtn.disabled = false;
-      modal.saveBtn.textContent = "Let's Go!";
+      modal.saveBtn.textContent = 'Create trip';
     }
   };
 }
@@ -157,7 +209,7 @@ async function renderTripList() {
     return;
   }
   if (trips.length === 0) {
-    list.innerHTML = `<div class="empty-trip-state"><div class="empty-trip-icon">✳</div><h3>Your next adventure starts with an invite.</h3><p>Create a trip for your crew, or join one with an invite code or link.</p><div><button class="primary-btn" data-empty-action="create">＋ Create a trip</button><button class="outline-btn" data-empty-action="join">↗ Join a trip</button></div></div>`;
+    list.innerHTML = `<div class="empty-trip-state"><div class="empty-trip-icon">✳</div><h3>No trips yet</h3><p>Create a trip with ＋ or join one using an invite.</p></div>`;
     document.dispatchEvent(new Event('lakbay:trip-list-updated'));
     return;
   }

@@ -16,6 +16,7 @@ let activePreviewPlaces = [];
 let itineraryMapLayers = null;
 let mapRenderSequence = 0;
 let leafletLoad = null;
+let leafletLoadErrorLogged = false;
 let lastGeocodeAt = 0;
 let selectedMapPin = null;
 const geocodeCache = new Map();
@@ -52,7 +53,7 @@ const DOM = {
 document.addEventListener('lakbay:view-changed', event => {
   if (event.detail === 'days' || event.detail === 'day') window.setTimeout(() => {
     itineraryMap?.invalidateSize();
-    if (event.detail === 'days' && activePreviewPlaces.length) void renderItineraryMap(activePreviewPlaces);
+    if (event.detail === 'days') void renderItineraryMap(activePreviewPlaces);
   }, 180);
 });
 
@@ -152,7 +153,9 @@ function renderDaysList() {
     document.getElementById('edit-preview-day').classList.add('hidden');
     document.getElementById('preview-add-activity').classList.add('hidden');
     document.getElementById('day-stops-preview').innerHTML = '';
-    void renderItineraryMap([]);
+    activePreviewPlaces=[];
+    if(window.lakbayCurrentView==='days')void renderItineraryMap([]);
+    else document.getElementById('itinerary-map').innerHTML='<div class="map-empty-state">Add map pins to destinations to show this day’s route.</div>';
     return;
   }
 
@@ -193,20 +196,45 @@ function renderDayPreview(day) {
     const pin = event.target.closest('[data-pin-activity]');
     if (pin) { openDayEditor(day.id); openEditModal(pin.dataset.pinActivity); }
   };
-  void renderItineraryMap(stops.filter(activity => activity.type === 'destination' && activity.lat !== null && activity.lat !== undefined && activity.lat !== '' && activity.lon !== null && activity.lon !== undefined && activity.lon !== '' && Number.isFinite(Number(activity.lat)) && Number.isFinite(Number(activity.lon))));
+  const places=stops.filter(activity => activity.type === 'destination' && activity.lat !== null && activity.lat !== undefined && activity.lat !== '' && activity.lon !== null && activity.lon !== undefined && activity.lon !== '' && Number.isFinite(Number(activity.lat)) && Number.isFinite(Number(activity.lon)));
+  activePreviewPlaces=places;
+  if(window.lakbayCurrentView==='days')void renderItineraryMap(places);
+  else document.getElementById('itinerary-map').innerHTML='<div class="map-empty-state">Select Itinerary to preview map pins and routes.</div>';
 }
 
 function ensureLeaflet() {
   if (window.L) return Promise.resolve(window.L);
   if (leafletLoad) return leafletLoad;
-  leafletLoad = new Promise((resolve, reject) => {
-    if (!document.querySelector('link[data-leaflet]')) {
-      const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'; css.dataset.leaflet = 'true'; document.head.append(css);
+  leafletLoad = (async () => {
+    const css = document.querySelector('link[data-leaflet]') || document.createElement('link');
+    css.rel = 'stylesheet';
+    css.href = 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css';
+    css.dataset.leaflet = 'true';
+    if (!css.isConnected) document.head.append(css);
+
+    const sources = [
+      'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js',
+      'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js',
+      'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
+    ];
+    for (const src of sources) {
+      try {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = src; script.async = true; script.dataset.leaflet = 'script';
+          const timeout=window.setTimeout(()=>reject(new Error(`Leaflet timed out at ${new URL(src).hostname}.`)),7000);
+          script.onload = () => {window.clearTimeout(timeout);window.L ? resolve(window.L) : reject(new Error('The map script loaded without initializing Leaflet.'))};
+          script.onerror = () => {window.clearTimeout(timeout);reject(new Error(`Leaflet could not be loaded from ${new URL(src).hostname}.`))};
+          document.head.append(script);
+        });
+        leafletLoadErrorLogged = false;
+        return window.L;
+      } catch (error) {
+        document.querySelectorAll('script[data-leaflet="script"]').forEach(script => { if (script.src === src) script.remove(); });
+      }
     }
-    const script = document.createElement('script'); script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'; script.async = true;
-    script.onload = () => resolve(window.L); script.onerror = () => reject(new Error('The map library could not be loaded.'));
-    document.head.append(script);
-  });
+    throw new Error('The map library could not be loaded from the available CDNs. Check the connection or content blockers, then retry.');
+  })();
   return leafletLoad;
 }
 
@@ -215,6 +243,16 @@ async function renderItineraryMap(places) {
   const sequence = ++mapRenderSequence;
   const host = document.getElementById('itinerary-map');
   if (!host) return;
+  if (window.lakbayCurrentView !== 'days') return;
+  if (!activePreviewPlaces.length) {
+    if (itineraryMapLayers) {
+      itineraryMapLayers.clearLayers();
+      itineraryMap?.setView([20, 0], 2);
+      host.querySelector('.map-empty-state')?.remove();
+      host.insertAdjacentHTML('beforeend','<div class="map-empty-state">Add map pins to destinations to show this day’s route.</div>');
+    } else host.innerHTML='<div class="map-empty-state">Add map pins to destinations to show this day’s route.</div>';
+    return;
+  }
   try {
     const L = await ensureLeaflet();
     if (sequence !== mapRenderSequence || !host.isConnected) return;
@@ -256,8 +294,15 @@ async function renderItineraryMap(places) {
       requestAnimationFrame(()=>window.setTimeout(()=>{if(sequence===mapRenderSequence&&itineraryMap&&host.isConnected){itineraryMap.invalidateSize();itineraryMap.fitBounds(bounds,{maxZoom:15,animate:false})}},120));
     }
   } catch (error) {
-    console.error('Could not load the itinerary map.', error);
-    if (sequence === mapRenderSequence) host.innerHTML = '<div class="map-empty-state">Map unavailable. Try again when a connection is available.</div>';
+    if (!leafletLoadErrorLogged) { console.error('Could not load the itinerary map.', error); leafletLoadErrorLogged = true; }
+    if (sequence === mapRenderSequence) {
+      host.innerHTML = '<div class="map-empty-state map-load-error">Map unavailable. Check your connection and try again.<button type="button" data-retry-map>Retry map</button></div>';
+      host.onclick = event => {
+        if (!event.target.closest('[data-retry-map]')) return;
+        leafletLoad = null; leafletLoadErrorLogged = false;
+        void renderItineraryMap(activePreviewPlaces);
+      };
+    }
   }
 }
 
